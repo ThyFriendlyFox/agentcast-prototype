@@ -1,5 +1,5 @@
 # Agentcast: one command per job. Needs the EE Workcenter (`workcenter doctor`).
-VERSION ?= v0.3
+VERSION ?= v0.4
 BOARDS := $(patsubst %/,%,$(dir $(wildcard hardware/$(VERSION)/*/design.py)))
 PY := $(shell [ -x /opt/workcenters/ee/venv/bin/python ] && echo /opt/workcenters/ee/venv/bin/python || echo python3)
 

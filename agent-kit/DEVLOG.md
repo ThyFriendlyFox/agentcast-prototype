@@ -77,3 +77,15 @@ twice, so In2.Cu is now a plane with nothing else on it. No board-mount HDMI
 plug with a drawing turned up, so the stick still needs an adapter.
 
 Evidence: `workcenter gates` GREEN on `hardware/v0.3/dongle`.
+
+## 2026-11-05 — v0.4: a male HDMI plug on the stick
+
+The human pointed out that a TV dongle needs a male HDMI plug. v0.4 clamps a
+male HDMI Type-A plug on the board's near edge: odd contacts on the top face,
+even on the bottom. KiCad has no such footprint, so the library script draws
+one from the HDMI Type-A contact layout. Two HDMI pairs now drop through a via
+pair to the bottom contacts; all four stay matched within each pair. The part's
+drawing (XUNPU HDMI-003) would not download here, so its pad size, clamp tabs,
+odd-row face and board thickness are still to confirm. Gates are GREEN.
+
+Evidence: `workcenter gates` GREEN on `hardware/v0.4/dongle`.

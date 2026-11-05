@@ -1,6 +1,7 @@
 # Agentcast dongle v0.3
 
-> **In work.** Made from [v0.2](../v0.2/) (commit `6d5fa2a`). v0.3 turns the
+> **Archived** at commit `f83c855`. Superseded by [v0.4](../v0.4/) (male HDMI plug).
+> Made from [v0.2](../v0.2/) (commit `6d5fa2a`). v0.3 turns the
 > one-board dongle into a stick: long and narrow, with the HDMI port at one end.
 
 One board, 67 x 46 mm, 4 layers. A Raspberry Pi Compute Module 5 sits on top.
