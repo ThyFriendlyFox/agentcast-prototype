@@ -16,7 +16,7 @@ Each case has the same shape: **Plug** (what the room sets up), **Talk**
 
 ## UC-1 Team room
 
-**Plug.** A team plugs the dongle into the room TV and sets the mic bar on top.
+**Plug.** A team plugs the dongle into the room TV.
 **Talk.** They plan a feature standing at the TV.
 **See.** The TV shows the transcript, the tickets the agent wrote, and its first code diff.
 
@@ -29,7 +29,7 @@ Each case has the same shape: **Plug** (what the room sets up), **Talk**
 ## UC-3 Mute for a private meeting
 
 **Plug.** The dongle is on and listening.
-**Talk.** Someone slides the mute switch on the mic bar.
+**Talk.** Someone slides the mute switch on the dongle.
 **See.** The green LED goes out and the red LED lights; the TV shows "muted".
 
 ## UC-4 Standup

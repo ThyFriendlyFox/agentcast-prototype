@@ -28,9 +28,9 @@ Requires the EE Workcenter toolchain (KiCad 10.0, ngspice 42, FreeRouting 1.9.0,
 4. The CM5 pin table (`hardware/*/library/cm5_pins.csv`) is read from the
    CM5 datasheet, never typed from memory. Symbols come from it via
    `gen_library.py`.
-5. The mute path stays hardware: the mic supply runs through SW1 on the
-   mic bar, and the LIVE LED runs from that supply. No firmware or GPIO
-   may power the mics or the LIVE LED.
+5. The mute path stays hardware: MIC_VDD runs through the mute switch, and
+   the mic, its clock buffers, the LIVE LED and the external port's power
+   switch all run from MIC_VDD. No firmware or GPIO may power any of them.
 
 ## Landmine map
 
@@ -38,7 +38,7 @@ Requires the EE Workcenter toolchain (KiCad 10.0, ngspice 42, FreeRouting 1.9.0,
 
 | Area | Why it bites |
 |---|---|
-| `hardware/*/main/design.py` TMDS routes | The four HDMI pairs are drawn by hand (`route_tmds`) at 0.2/0.2 mm for 100 ohm on the JLC04161H-7628 stackup. Moving J2 or J3 moves every point; re-check the skew table the function prints. |
+| `hardware/*/dongle/design.py` TMDS routes | The four HDMI pairs are drawn by hand (`route_tmds`) at 0.2/0.2 mm for 100 ohm on the JLC04161H-7628 stackup. Moving J2 or J3 moves every point; re-check the skew table the function prints. |
 | CM5 socket placement | From CM5 datasheet Figure 4 (approximate). Check it against Raspberry Pi's CM5 design files before ordering boards. |
 | Antenna keep-out | The pours are cut under the CM5's PCB antenna. A new pour or part in that corner detunes Wi-Fi. |
 | `gen_library.py` pin names | No spaces in pin names: KiCad writes a space as `_` in an open pin's net name and the DRC parity check fails. |

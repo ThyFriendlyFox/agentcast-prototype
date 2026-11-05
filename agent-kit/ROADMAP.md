@@ -15,22 +15,22 @@ can plug into a TV and use in minutes.
 
 provisional: true (set by the agent at setup; the human re-orders)
 
-### 1. v0.1 bring-up on the bench
-- **Promise:** A CM5 on a v0.1 main board boots, shows a desktop on a TV over HDMI, and records 4 channels from the mic bar with `arecord`.
-- **Evidence:** a photo of the TV and a 4-channel WAV in `hardware/v0.1/bringup/`.
+### 1. v0.2 bring-up on the bench
+- **Promise:** A CM5 on a v0.2 board boots, shows a desktop on a TV over HDMI, and records from the on-board mic and from a USB mic on J6 with `arecord`.
+- **Evidence:** a photo of the TV and two WAV files in `hardware/v0.2/bringup/`.
 - **Use case:** UC-1 (team room).
 - **Scope guard:** no enclosure, no cloud agent, no echo cancellation.
-- **Status:** blocked on ordering v0.1 boards (open item 1: CM5 socket positions).
+- **Status:** blocked on ordering v0.2 boards (open item 1: CM5 socket positions).
 
-### 2. v0.2 HDMI +5V load switch and main board SIM deck
-- **Promise:** HDMI pin 18 holds at least 4.8 V at 55 mA with USB-C at 4.75 V, proven by an ngspice deck with sourced models.
-- **Evidence:** `workcenter gates` GREEN on v0.2 main with the deck passing.
-- **Use case:** UC-1.
-- **Scope guard:** no other main board change.
-- **Status:** ready
+### 2. Speaker labels from voice on the dongle's audio
+- **Promise:** A recording from the v0.2 mic of 3 people talking in turn gets 3 speaker labels from a voice-based diarizer with under 15 % diarization error.
+- **Evidence:** the script, the recording and the score in `hardware/v0.2/bringup/`.
+- **Use case:** UC-4 (standup).
+- **Scope guard:** offline test; no live pipeline.
+- **Status:** blocked on item 1.
 
 ### 3. Echo reference: measure HDMI audio vs I2S clock drift
-- **Promise:** A test plays a tone over HDMI and records it on the mic bar, and reports the drift between the two clocks in ppm.
+- **Promise:** A test plays a tone over HDMI and records it on the on-board mic, and reports the drift between the two clocks in ppm.
 - **Evidence:** the script and its output in `hardware/v0.1/bringup/`.
 - **Use case:** UC-2 (agent speaks, people interrupt).
 - **Scope guard:** measurement only; no canceller.
@@ -38,9 +38,9 @@ provisional: true (set by the agent at setup; the human re-orders)
 
 ## Later — candidates, not yet specced
 
-- 8-mic bar on all 4 I2S0 lanes — better direction finding.
+- Parts under the module (taller CM5 sockets) — a smaller board.
 - Wired Ethernet on the main board — offices that block Wi-Fi devices.
-- Enclosure and mic bar bracket — the bar must stand facing the room.
+- Enclosure — the dongle hangs behind a TV; the mic needs an opening.
 
 ## Shipped
 

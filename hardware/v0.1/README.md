@@ -1,6 +1,7 @@
 # Agentcast dongle v0.1
 
-> **In work.** First version. Made from the spec in
+> **Archived** at commit `2c0782a`. Superseded by [v0.2](../v0.2/) (one board).
+> First version. Made from the spec in
 > [`docs/office-agent-dongle.md`](../../docs/office-agent-dongle.md) with the
 > [Via EE Workcenter](https://github.com/ThyFriendlyFox/via).
 

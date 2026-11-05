@@ -6,9 +6,10 @@ behavior change. The weekly cycle (WEEKLY.md step 5) refreshes it.
 
 | Area | State | Evidence |
 |---|---|---|
-| v0.1 main board design | ✅ | `workcenter gates` GREEN: ERC 0/0, DRC 0 errors, EXPORT 24 Gerbers |
-| v0.1 mic bar design | ✅ | `workcenter gates` GREEN: ERC 0/0, DRC 0 errors, SIM 1 deck |
-| v0.1 boards ordered | ❌ | blocked on checking CM5 socket positions |
+| v0.2 one-board dongle design | ✅ | `workcenter gates` GREEN: ERC 0/0, DRC 0 errors, SIM 1 deck, EXPORT 24 Gerbers |
+| v0.2 fab files | ✅ | `hardware/v0.2/dongle/fab/` from `make fab` |
+| v0.2 board ordered | ❌ | blocked on checking CM5 socket positions |
+| v0.1 main board and mic bar | 🧊 | archived at `2c0782a`; superseded by v0.2 |
 | Firmware / OS image | ❌ | not started |
 
 States: ✅ done (gated) · 🚧 in progress · ❌ not started · 🧊 frozen/won't do.
@@ -17,4 +18,4 @@ States: ✅ done (gated) · 🚧 in progress · ❌ not started · 🧊 frozen/w
 
 - **Shipping:** between cycles
 - **Last release:** none
-- **Known red:** none. Main board SIM gate skips (no deck); roadmap item 2.
+- **Known red:** none.

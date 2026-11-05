@@ -8,7 +8,8 @@ The product spec is [`docs/office-agent-dongle.md`](docs/office-agent-dongle.md)
 
 | Version | State | Boards | Notes |
 |---|---|---|---|
-| [v0.1](hardware/v0.1/) | in work | main (CM5 carrier, HDMI-A, USB-C), mic bar (4 x ICS-43434, hardware mute) | Gates GREEN on both boards. Not yet ordered. |
+| [v0.2](hardware/v0.2/) | in work | one board, 57 x 50.4 mm: CM5 carrier, HDMI-A, USB-C power, USB-C port for an external mic, on-board mic, hardware mute | Gates GREEN. Fab files in `hardware/v0.2/dongle/fab/`. Not yet ordered. |
+| [v0.1](hardware/v0.1/) | archived | main (CM5 carrier) and mic bar (4 mics) on a cable | Gates GREEN on both boards. Never ordered. |
 
 ## Tools
 

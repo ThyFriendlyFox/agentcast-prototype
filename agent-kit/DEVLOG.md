@@ -52,3 +52,14 @@ pass ERC, DRC and export. The CM5 socket positions come from an approximate
 datasheet figure and need a check before ordering.
 
 Evidence: `workcenter gates` GREEN on `hardware/v0.1/main` and `hardware/v0.1/micbar`.
+
+## 2026-11-05 — v0.2: one board with an on-board mic
+
+The human found v0.1 too big and asked for one board. Speaker labels come
+from voices, not directions, so the 4-mic bar went. v0.2 is one 57 x 50.4 mm
+board under the CM5. It has one I2S mic, a USB-C port for an external mic,
+and the mute switch, which now also cuts the external port's power. Small
+parts moved to the bottom face. The HDMI +5V now runs through a switch, not a
+diode. The board passes ERC, DRC, SIM and export. v0.1 is archived.
+
+Evidence: `workcenter gates` GREEN on `hardware/v0.2/dongle`.
