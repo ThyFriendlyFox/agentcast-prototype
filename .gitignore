@@ -3,3 +3,6 @@ build/
 __pycache__/
 .claude/ralph-loop.local.md
 .claude/*.local.md
+# Raspberry Pi's CM5 3D model: fetched by `make cm5-model`, not redistributed here.
+hardware/*/dongle/models/cm5.step
+hardware/*/dongle/models/cm5-step.zip

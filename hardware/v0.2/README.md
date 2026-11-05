@@ -1,6 +1,7 @@
 # Agentcast dongle v0.2
 
-> **In work.** Made from [v0.1](../v0.1/) (commit `2c0782a`). v0.2 folds the
+> **Archived** at commit `6d5fa2a`. Superseded by [v0.3](../v0.3/) (a stick).
+> Made from [v0.1](../v0.1/) (commit `2c0782a`). v0.2 folds the
 > two v0.1 boards into one: the mic bar, its cable and its 4-mic array are gone.
 
 One board, 57 x 50.4 mm, 4 layers. A Raspberry Pi Compute Module 5 sits on

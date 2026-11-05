@@ -63,3 +63,17 @@ parts moved to the bottom face. The HDMI +5V now runs through a switch, not a
 diode. The board passes ERC, DRC, SIM and export. v0.1 is archived.
 
 Evidence: `workcenter gates` GREEN on `hardware/v0.2/dongle`.
+
+## 2026-11-05 — v0.3: the dongle becomes a stick
+
+The human asked for a slimmer, stick-shaped board and could not see a USB port
+in the v0.2 pictures. The v0.2 USB-C parts had no 3D body in KiCad and drew as
+black boxes; v0.3 uses the GCT USB4085, which has one, and `render --strict`
+now passes. v0.3 is 67 x 46 mm with HDMI out of the end and the two USB-C ports
+out of the sides. I checked the CM5 sockets and holes against Raspberry Pi's
+CM5 3D model: they match. The HDMI pairs now run 60 to 66 mm in nested lanes,
+matched to 0.000 mm within each pair. The router cut the +5V pour into pieces
+twice, so In2.Cu is now a plane with nothing else on it. No board-mount HDMI
+plug with a drawing turned up, so the stick still needs an adapter.
+
+Evidence: `workcenter gates` GREEN on `hardware/v0.3/dongle`.
