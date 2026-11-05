@@ -1,0 +1,5 @@
+build/
+*.kicad_prl
+__pycache__/
+.claude/ralph-loop.local.md
+.claude/*.local.md

@@ -1,0 +1,4 @@
+{
+  "v_live": { "min": 2.0, "max": 3.465, "req": "REQ-MIC-01" },
+  "v_muted": { "min": 0.0, "max": 0.8, "req": "REQ-MIC-02" }
+}

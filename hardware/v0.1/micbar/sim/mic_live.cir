@@ -1,0 +1,19 @@
+* MIC_LIVE level at the CM5's GPIO5, at its corners.
+* Live: MIC_VDD at CM5_3.3V's minimum, 3.135 V (3.3 V -5 %, CM5 datasheet section 4.2, pin 84),
+* R5 10k +1 % on the bar, R5 100k -1 % pull-down on the main board, and the GPIO's 3 uA input
+* leakage (CM5 datasheet Table 8) drawn out of the node.
+* Muted: MIC_VDD has no source; only the pull-down holds the node, and the 3 uA leakage flows in.
+* Limits: VIH 2.0 V and VIL 0.8 V at VGPIO_VREF = 3.3 V (CM5 datasheet Table 8).
+VDD vdd 0 DC 3.135
+R5 vdd live 10.1k
+RPD live 0 99k
+IL live 0 DC 3u
+RPD2 muted 0 101k
+IL2 0 muted DC 3u
+.control
+op
+let v_live = v(live)
+let v_muted = v(muted)
+print v_live v_muted
+.endc
+.end
