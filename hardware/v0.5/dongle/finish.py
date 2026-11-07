@@ -467,7 +467,7 @@ def gnd_islands(board: pcbnew.BOARD, report: dict) -> list:
     return out
 
 
-def main(board_dir: Path) -> int:
+def main(board_dir: Path, rip_up: bool = True) -> int:
     pcb_path = next(board_dir.glob("*.kicad_pcb"))
     report = json.loads((board_dir / "build" / "drc.json").read_text(encoding="utf-8"))
     board = pcbnew.LoadBoard(str(pcb_path))
@@ -493,7 +493,7 @@ def main(board_dir: Path) -> int:
         while len(parts) > 1 and routes < MAX_ROUTES:
             routes += 1
             src, dst = parts[-1], set().union(*parts[:-1])  # the smallest piece to the rest
-            path = search(g, net, src, dst, price)
+            path = search(g, net, src, dst, price if rip_up else None, reach=6.0)
             if path is None:
                 print(f"  OPEN {names.get(net, net)}: no path")
                 failed.add(net)
@@ -530,6 +530,7 @@ def main(board_dir: Path) -> int:
 
 
 PAD_RE = re.compile(r"Pad (\S+) \[(.+?)\] of (\S+)")
+PRE_ROUNDS = 5
 SMALL_NET = 6  # pads: a net this small is routed whole before FreeRouting; a larger one only at its open pads
 
 
@@ -562,42 +563,62 @@ def preroute(board_dir: Path, report_path: Path) -> int:
         for pad in fp.Pads():
             p = pad.GetPosition()
             pad_at[f"{fp.GetReference()}.{pad.GetNumber()}"] = (mm(p.x), mm(p.y))
-    for spec in hard:
-        net = codes.get(spec["net"])
-        if net is None:
-            continue
-        whole = sum(1 for pad in g.pads if pad["net"] == net) <= SMALL_NET
-        for _ in range(SMALL_NET if whole else len(spec["pads"])):
-            parts = clusters(g, net)
-            if len(parts) < 2:
-                break
-            if whole:
-                src = parts[-1]
-            else:
-                todo = [pad_at[p] for p in spec["pads"] if p in pad_at]
-                src = None
-                for x, y in todo:
-                    c = g.cell(x, y)
-                    src = next((q for q in parts if any((n, *c) in q for n in ROUTING)), None)
-                    if src is not None and src is not parts[0]:
+    def attempt(order: list) -> list:
+        """Preroute in this order from the unrouted board; returns the nets left open."""
+        g.copper = [list(c) for c in original]
+        FIXED.clear()
+        g.rebuild()
+        failed = []
+        for spec in order:
+            net = codes.get(spec["net"])
+            if net is None:
+                continue
+            whole = sum(1 for pad in g.pads if pad["net"] == net) <= SMALL_NET
+            for _ in range(SMALL_NET if whole else len(spec["pads"])):
+                parts = clusters(g, net)
+                if len(parts) < 2:
+                    break
+                if whole:
+                    src = parts[-1]
+                else:
+                    todo = [pad_at[p] for p in spec["pads"] if p in pad_at]
+                    src = None
+                    for x, y in todo:
+                        c = g.cell(x, y)
+                        src = next((q for q in parts if any((n, *c) in q for n in ROUTING)), None)
+                        if src is not None and src is not parts[0]:
+                            break
+                    if src is None or src is parts[0]:
                         break
-                if src is None or src is parts[0]:
-                    break
-            dst = set().union(*(q for q in parts if q is not src))
-            path = search(g, net, src, dst, None, reach=6.0)
-            ripped: set[int] = set()
-            if path is None:  # boxed in by its neighbours' fanout: take their stubs, FreeRouting routes them
-                path = search(g, net, src, dst, {}, reach=6.0)
-                if path is None:
-                    print(f"  OPEN {spec['net']}: no path")
-                    break
-                ripped = rip(g, net, *path_copper(g, path))
-            tracks, vias = path_copper(g, path)
-            draw(g, net, tracks, vias)
-            FIXED.add(spec["net"])
-            g.rebuild()
-            print(f"  prerouted {spec['net']}: {len(tracks)} tracks, {len(vias)} vias"
-                  + (f"; took the fanout of {sorted(names[o] for o in ripped)}" if ripped else ""))
+                dst = set().union(*(q for q in parts if q is not src))
+                path = search(g, net, src, dst, None, reach=6.0)
+                ripped: set[int] = set()
+                if path is None:  # boxed in by its neighbours' fanout: take their stubs, FreeRouting routes them
+                    path = search(g, net, src, dst, {}, reach=6.0)
+                    if path is None:
+                        print(f"  OPEN {spec['net']}: no path")
+                        failed.append(spec["net"])
+                        break
+                    ripped = rip(g, net, *path_copper(g, path))
+                tracks, vias = path_copper(g, path)
+                draw(g, net, tracks, vias)
+                FIXED.add(spec["net"])
+                g.rebuild()
+                print(f"  prerouted {spec['net']}: {len(tracks)} tracks, {len(vias)} vias"
+                      + (f"; took the fanout of {sorted(names[o] for o in ripped)}" if ripped else ""))
+        return failed
+
+    order, best = list(hard), None
+    for k in range(PRE_ROUNDS):  # a net left open goes first next round
+        print(f"preroute round {k + 1}")
+        failed = attempt(order)
+        if best is None or len(failed) < len(best[0]):
+            best = (failed, [list(c) for c in g.copper], list(order))
+        if not failed:
+            break
+        order = [h for h in order if h["net"] in failed] + [h for h in order if h["net"] not in failed]
+    failed, g.copper, hard = best
+    print(f"preroute: best round leaves {failed or 'nothing'} open")
     before = {(n, layer, tuple(a), tuple(b)) for _c, n, layer, a, b, _r, _d in original}
     after = {(n, layer, tuple(a), tuple(b)) for _c, n, layer, a, b, _r, _d in g.copper}
     copper = [
@@ -617,4 +638,6 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     if args and args[0] == "--pre":  # finish.py --pre BOARD_DIR DRC_JSON
         sys.exit(preroute(Path(args[1]).resolve(), Path(args[2]).resolve()))
-    sys.exit(main(Path(args[0] if args else Path(__file__).parent).resolve()))
+    rip_up = "--no-rip" not in args  # --no-rip: only paths through free copper, nothing routed moves
+    args = [a for a in args if a != "--no-rip"]
+    sys.exit(main(Path(args[0] if args else Path(__file__).parent).resolve(), rip_up))
