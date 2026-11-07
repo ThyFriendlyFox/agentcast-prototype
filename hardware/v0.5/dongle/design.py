@@ -132,12 +132,14 @@ P4_NETS = {
     52: "USB_FS_DN", 53: "USB_FS_DP",  # GPIO24/25: USB serial/JTAG
     66: "BOOT",  # GPIO35 strapping: low at reset = download mode
     68: "GPIO36_PU",  # GPIO36 strapping, held high
-    80: "MIC_LIVE",  # GPIO39
-    81: "C6_RXD",  # GPIO40: P4 UART TX -> C6 RXD0 (flashing the C6 from the P4)
-    82: "C6_TXD",  # GPIO41
-    83: "C6_BOOT",  # GPIO42: C6 GPIO9 strap, open drain
-    84: "STATE_LED",  # GPIO43
-    86: "DDC_SDA_3V3", 87: "DDC_SCL_3V3",  # GPIO44/45
+    # Spread over free pins, every other one, toward what each drives: a run of neighbouring
+    # signal pins at 0.35 mm pitch leaves no room for their vias (README, pin plan).
+    11: "C6_RXD",  # GPIO10: P4 UART TX -> C6 RXD0 (flashing the C6 from the P4)
+    13: "C6_TXD",  # GPIO12
+    15: "C6_BOOT",  # GPIO14: C6 GPIO9 strap, open drain
+    56: "MIC_LIVE",  # GPIO27
+    58: "STATE_LED",  # GPIO29
+    61: "DDC_SDA_3V3", 63: "DDC_SCL_3V3",  # GPIO31/32
     88: "HDMI_CEC",  # GPIO46, open drain
     92: "LT_SDA", 93: "LT_SCL", 94: "I2S_BCLK", 95: "I2S_WS", 97: "I2S_DOUT", 98: "I2S_DIN",  # GPIO49-54
     105: "GND",

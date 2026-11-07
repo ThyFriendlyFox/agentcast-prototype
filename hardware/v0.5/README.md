@@ -85,19 +85,23 @@ LT8912B and mic signal; the other banks run at 3.3 V.
 From the ESP32-P4 datasheet v0.7 (Table 2-1) and the HDG. Every signal on a
 GPIO goes through the GPIO matrix except USB serial/JTAG (GPIO24/25, IO MUX).
 
+Signals the GPIO matrix can put anywhere sit on every other free pin, on the
+side facing what they drive: neighbouring signal pins at 0.35 mm pitch leave
+no room for their vias.
+
 | GPIO (pin) | Bank | Net | Function |
 |---|---|---|---|
-| 16 (17) | 0, 3.3 V | C6_EN | C6 enable, open drain, 10k up + 1 uF |
+| 10 / 12 (11 / 13) | 0, 3.3 V | C6_RXD / C6_TXD | UART to the C6, for flashing it from the P4 |
+| 14 (15) | 0 | C6_BOOT | the C6's GPIO9 strap, open drain, 10k up |
+| 16 (17) | 0 | C6_EN | C6 enable, open drain, 10k up + 1 uF |
 | 17 (18) | 0 | LT_RST_N | LT8912B reset, open drain, 10k up to +1V8 |
 | 18-23 (19, 20, 22-25) | 0 | SDIO_CLK, CMD, D0-D3 | SD/MMC host slot 2 (GPIO matrix) to the C6; 22 ohm series, 10k up (HDG 1.3.11) |
 | 24 / 25 (52 / 53) | 4 | USB_FS_DN / DP | USB serial/JTAG to J4, 22 ohm series (HDG 1.3.12) |
+| 27 (56) | 4 | MIC_LIVE | input, high = mics powered |
+| 29 (58) | 4 | STATE_LED | amber STATE LED |
+| 31 / 32 (61 / 63) | 4 | DDC_SDA_3V3 / SCL | I2C to the TV's EDID through Q1 / Q2 |
 | 35 (66) | 4 | BOOT | strapping: low at reset = download mode (HDG Table 4); 10k up, SW1 |
 | 36 (68) | 4 | GPIO36_PU | strapping, 10k up |
-| 39 (80) | 5 | MIC_LIVE | input, high = mics powered |
-| 40 / 41 (81 / 82) | 5 | C6_RXD / C6_TXD | UART to the C6, for flashing it from the P4 |
-| 42 (83) | 5 | C6_BOOT | the C6's GPIO9 strap, open drain, 10k up |
-| 43 (84) | 5 | STATE_LED | amber STATE LED |
-| 44 / 45 (86 / 87) | 5 | DDC_SDA_3V3 / SCL | I2C to the TV's EDID through Q1 / Q2 |
 | 46 (88) | 5 | HDMI_CEC | CEC, open drain, 27k up to +3V3 |
 | 49 / 50 (92 / 93) | 6, 1.8 V | LT_SDA / LT_SCL | I2C to the LT8912B, 4.7k up to +1V8 |
 | 51 / 52 (94 / 95) | 6 | I2S_BCLK / I2S_WS | I2S master clocks: LT8912B and (through U13 / U14) the mic |
@@ -154,7 +158,7 @@ other. The LT8912B datasheet lists its data lanes as "polarity swappable".
 1. **Firmware.** None yet. The P4 needs ESP-IDF with ESP-Hosted (Wi-Fi over
    the C6), the LT8912B driver, I2S capture and playback, and the cloud
    stream. The C6 needs the ESP-Hosted slave image, flashed by the P4 over
-   UART (GPIO40-42).
+   UART (GPIO10/12/14).
 2. **LT8912B crystal frequency.** The datasheet (R1.13) asks for a crystal on
    XTALI/XTALO and gives no value. Y2 is marked "25MHz (confirm)". Ask Lontium
    or a distributor's reference design before ordering.
