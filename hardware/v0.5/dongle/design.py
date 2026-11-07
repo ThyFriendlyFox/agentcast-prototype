@@ -36,7 +36,9 @@ from __future__ import annotations
 import csv
 import heapq
 import itertools
+import json
 import math
+import os
 import uuid
 from pathlib import Path
 
@@ -712,6 +714,37 @@ def _maze_escape(d: kicadgen.Design, pad, ox: float, oy: float, boxes: list, rea
     return None
 
 
+def preroute(d: kicadgen.Design) -> None:
+    """The connections FreeRouting leaves open, routed first by finish.py --pre on the unrouted
+    board (prerouted.json), added as fixed copper: the router routes the rest around them.
+    AGENTCAST_PREROUTE=0 leaves them out, for finish.py to route them again."""
+    path = Path(__file__).with_name("prerouted.json")
+    if os.environ.get("AGENTCAST_PREROUTE") == "0" or not path.is_file():
+        return
+    data = json.loads(path.read_text(encoding="utf-8"))
+    gone = {
+        (c["net"], c["layer"], (round(c["a"][0], 4), round(c["a"][1], 4)), (round(c["b"][0], 4), round(c["b"][1], 4)))
+        for c in data.get("removed", [])
+    }
+    if gone:  # fanout stubs a prerouted connection runs through
+        def kept_seg(seg) -> bool:
+            net, a, b, _w, layer = seg
+            return (net.removeprefix("/"), layer, (round(a[0], 4), round(a[1], 4)), (round(b[0], 4), round(b[1], 4))) not in gone
+
+        def kept_via(via) -> bool:
+            net, at, _size, _drill = via
+            xy = (round(at[0], 4), round(at[1], 4))
+            return (net.removeprefix("/"), None, xy, xy) not in gone
+
+        d.segments[:] = [s for s in d.segments if kept_seg(s)]
+        d.vias[:] = [v for v in d.vias if kept_via(v)]
+    for c in data["copper"]:
+        if c["layer"] is None:
+            d.via(c["net"], c["a"][0], c["a"][1])
+        else:
+            d.track(c["net"], [tuple(c["a"]), tuple(c["b"])], c["layer"], width=0.12)
+
+
 def ep_vias(d: kicadgen.Design, ref: str, number: str, side: float, n: int) -> list[tuple[float, float]]:
     """An n x n grid of GND vias inside an exposed pad of side `side`; returns where they are."""
     cx, cy = pad_at(d, ref, number)
@@ -1092,6 +1125,7 @@ def build() -> kicadgen.Design:
     dsi = {f"DSI_{n}_{s}" for n in ("D0", "D1", "CK") for s in "PN"}
     hdmi = {f"HDMI_{n}_{s}" for n in ("D0", "D1", "D2", "CK") for s in "PN"}
     d.fanout = {ref: fanout(d, ref, dsi | hdmi) for ref in ("U1", "U3")}
+    preroute(d)
     stitch_grounds(d)
     d.model("J3", "${KIPRJMOD}/models/hdmi_a_plug.wrl", offset=(0.0, -5.65, -2.9))
 

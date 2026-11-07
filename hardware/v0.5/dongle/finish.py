@@ -19,8 +19,10 @@ Rules come from the board (clearance, edge clearance, via size and drill) plus H
 from __future__ import annotations
 
 import heapq
+import itertools
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -44,8 +46,11 @@ def mm(v: int) -> float:
     return pcbnew.ToMM(v)
 
 
+FIXED: set[str] = set()  # nets prerouted in this run: never ripped either
+
+
 def protected(name: str) -> bool:
-    return any(name == p or name.startswith(p) for p in PROTECTED)
+    return name in FIXED or any(name == p or name.startswith(p) for p in PROTECTED)
 
 
 class Grid:
@@ -302,6 +307,8 @@ def search(g: Grid, net: int, src: set, dst, price: dict, reach: float = 4.0):
         o = int(soft[i, j])
         if o in (FREE, net):
             return 0.0
+        if price is None:  # no ripping: routed copper is as fixed as the rest
+            return None
         return RIP_COST * (1 + max(price.get(o, 0.0), 0.0)) if o != BLOCKED else RIP_COST * 4
 
     best, parent, heap = {}, {}, []
@@ -363,7 +370,7 @@ def path_copper(g: Grid, path: list) -> tuple[list, list]:
                 corners.append(m)
         if len(run) > 1:
             corners.append(run[-1])
-        for a, c in zip(corners, corners[1:], strict=False):
+        for a, c in itertools.pairwise(corners):
             tracks.append((a[0], g.at(a[1], a[2]), g.at(c[1], c[2])))
         if k + 1 < len(runs):
             vias.append(g.at(run[-1][1], run[-1][2]))
@@ -522,5 +529,92 @@ def main(board_dir: Path) -> int:
     return 0
 
 
+PAD_RE = re.compile(r"Pad (\S+) \[(.+?)\] of (\S+)")
+SMALL_NET = 6  # pads: a net this small is routed whole before FreeRouting; a larger one only at its open pads
+
+
+def hard_list(report: dict, old: list) -> list:
+    """The connections to route before FreeRouting: the old list, plus each net the DRC found open
+    (GND aside), with the pads named in its open items."""
+    spec = {e["net"]: set(e["pads"]) for e in old}
+    for entry in report.get("unconnected_items", []):
+        for it in entry["items"]:
+            m = PAD_RE.match(it["description"])
+            if m and m.group(2) != "GND":
+                spec.setdefault(m.group(2), set()).add(f"{m.group(3)}.{m.group(1)}")
+    return [{"net": n, "pads": sorted(p)} for n, p in spec.items()]
+
+
+def preroute(board_dir: Path, report_path: Path) -> int:
+    """Route the hard connections on the unrouted board (no ripping) and write prerouted.json for
+    design.py, which adds them as fixed copper; FreeRouting then routes the rest around them."""
+    out = board_dir / "prerouted.json"
+    old = json.loads(out.read_text(encoding="utf-8"))["connections"] if out.is_file() else []
+    hard = hard_list(json.loads(report_path.read_text(encoding="utf-8")), old)
+    board = pcbnew.LoadBoard(str(next(board_dir.glob("*.kicad_pcb"))))
+    names = {code: str(ni.GetNetname()) for code, ni in board.GetNetsByNetcode().items()}
+    codes = {n: c for c, n in names.items()}
+    g = Grid(board)
+    g.names = names
+    original = [list(c) for c in g.copper]
+    pad_at = {}
+    for fp in board.GetFootprints():
+        for pad in fp.Pads():
+            p = pad.GetPosition()
+            pad_at[f"{fp.GetReference()}.{pad.GetNumber()}"] = (mm(p.x), mm(p.y))
+    for spec in hard:
+        net = codes.get(spec["net"])
+        if net is None:
+            continue
+        whole = sum(1 for pad in g.pads if pad["net"] == net) <= SMALL_NET
+        for _ in range(SMALL_NET if whole else len(spec["pads"])):
+            parts = clusters(g, net)
+            if len(parts) < 2:
+                break
+            if whole:
+                src = parts[-1]
+            else:
+                todo = [pad_at[p] for p in spec["pads"] if p in pad_at]
+                src = None
+                for x, y in todo:
+                    c = g.cell(x, y)
+                    src = next((q for q in parts if any((n, *c) in q for n in ROUTING)), None)
+                    if src is not None and src is not parts[0]:
+                        break
+                if src is None or src is parts[0]:
+                    break
+            dst = set().union(*(q for q in parts if q is not src))
+            path = search(g, net, src, dst, None, reach=6.0)
+            ripped: set[int] = set()
+            if path is None:  # boxed in by its neighbours' fanout: take their stubs, FreeRouting routes them
+                path = search(g, net, src, dst, {}, reach=6.0)
+                if path is None:
+                    print(f"  OPEN {spec['net']}: no path")
+                    break
+                ripped = rip(g, net, *path_copper(g, path))
+            tracks, vias = path_copper(g, path)
+            draw(g, net, tracks, vias)
+            FIXED.add(spec["net"])
+            g.rebuild()
+            print(f"  prerouted {spec['net']}: {len(tracks)} tracks, {len(vias)} vias"
+                  + (f"; took the fanout of {sorted(names[o] for o in ripped)}" if ripped else ""))
+    before = {(n, layer, tuple(a), tuple(b)) for _c, n, layer, a, b, _r, _d in original}
+    after = {(n, layer, tuple(a), tuple(b)) for _c, n, layer, a, b, _r, _d in g.copper}
+    copper = [
+        {"net": name.removeprefix("/"), "layer": layer, "a": a, "b": b}
+        for _net, name, layer, a, b, _r, _d in g.copper
+        if (name, layer, tuple(a), tuple(b)) not in before
+    ]
+    removed = sorted({(n.removeprefix("/"), layer, a, b) for n, layer, a, b in before - after}, key=str)
+    removed = [{"net": n, "layer": layer, "a": a, "b": b} for n, layer, a, b in removed]
+    out.write_text(json.dumps({"connections": hard, "copper": copper, "removed": removed}, indent=1) + "\n",
+                   encoding="utf-8")
+    print(f"preroute: {len(hard)} nets, {len(copper)} pieces; wrote {out}")
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(main(Path(sys.argv[1] if len(sys.argv) > 1 else Path(__file__).parent).resolve()))
+    args = sys.argv[1:]
+    if args and args[0] == "--pre":  # finish.py --pre BOARD_DIR DRC_JSON
+        sys.exit(preroute(Path(args[1]).resolve(), Path(args[2]).resolve()))
+    sys.exit(main(Path(args[0] if args else Path(__file__).parent).resolve()))
