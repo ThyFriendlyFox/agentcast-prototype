@@ -3,17 +3,17 @@
 > **In work.** Made from [v0.4](../v0.4/) (commit `223e73b`). v0.5 drops the
 > Raspberry Pi CM5 and puts our own small computer on a Chromecast-sized stick.
 
-One board, **72 x 26 mm**, 6 layers, parts on both faces. A male HDMI plug
+One board, **72 x 30 mm**, 8 layers, parts on both faces. A male HDMI plug
 (XUNPU HDMI-003) clamps one end; the Wi-Fi antenna is at the other.
 
 | | v0.4 | v0.5 |
 |---|---|---|
-| Size | 67 x 46 mm | 72 x 26 mm |
+| Size | 67 x 46 mm | 72 x 30 mm |
 | Computer | Raspberry Pi CM5 module (55 x 40 mm, Linux) | ESP32-P4 (10 x 10 mm, 32 MB PSRAM in the package, no Linux) |
 | HDMI | from the CM5 | LT8912B MIPI DSI to HDMI bridge, with HDMI audio |
 | Wi-Fi | the CM5's | ESP32-C6-MINI-1 module (Wi-Fi 6), SDIO to the P4 |
 | HDMI plug footprint | HDMI Type-A layout, 4 numbers unconfirmed | the XUNPU HDMI-003 drawing, every number |
-| Layers | 4 | 6 (F.Cu, In1 GND, In2, In3, In4 GND, B.Cu), JLCPCB JLC06161H-2313 |
+| Layers | 4 | 8 (F.Cu, In1 GND, In2-In5, In6 GND, B.Cu), JLCPCB JLC081611-2116 |
 
 ![layers](dongle/docs/layers.png)
 
@@ -121,16 +121,16 @@ are plated; these are plain cuts, and the shell is soldered at its four tabs.
 
 ## Stackup and pairs
 
-6 layers, 1.6 mm, JLCPCB's JLC06161H-2313: F.Cu signal, In1.Cu GND plane,
-In2.Cu and In3.Cu signal, In4.Cu GND plane, B.Cu signal. The 0.35 mm pitch of
-the P4 did not route on 4 layers (20-38 connections left open on every try).
-The prepreg under each outer layer is 0.1 mm (er about 4.05), so the pairs are
-narrow:
+8 layers, 1.6 mm, JLCPCB's JLC081611-2116: F.Cu signal, In1.Cu GND plane,
+In2.Cu to In5.Cu signal, In6.Cu GND plane, B.Cu signal. The 0.35 mm pitch of
+the P4 did not route on 4 layers (20-38 connections left open on every try),
+nor on 6 layers at 26 or 30 mm wide (26-31 left open). The prepreg under each
+outer layer is 0.109 mm of 2116 (er 4.16), so the pairs are narrow:
 
 | Pairs | Width / gap | Differential impedance |
 |---|---|---|
-| TMDS (LT8912B to the plug), F.Cu over In1 | 0.12 / 0.16 mm | about 101 ohm |
-| DSI (P4 to LT8912B), F.Cu over In1 | 0.14 / 0.21 mm (the P4's 0.35 mm pad pitch) | about 98 ohm |
+| TMDS (LT8912B to the plug), F.Cu over In1 | 0.12 / 0.16 mm | about 104 ohm |
+| DSI (P4 to LT8912B), F.Cu over In1 | 0.14 / 0.21 mm (the P4's 0.35 mm pad pitch) | about 102 ohm |
 
 Check both against JLCPCB's impedance calculator when ordering: kicadgen
 writes a generic stackup into the board file and has no way to set this one,
@@ -168,5 +168,5 @@ other. The LT8912B datasheet lists its data lanes as "polarity swappable".
 6. **Mute switch direction.** Mark which slider end is LIVE on the first article.
 7. **DSI lane polarity.** The LT8912B driver must set the polarity swap on
    data lanes 0 and 1 (Stackup and pairs). Without it the TV shows nothing.
-8. **Stackup table.** The board file carries kicadgen's generic 6-layer
-   stackup. Order JLC06161H-2313 by name.
+8. **Stackup table.** The board file carries kicadgen's generic 8-layer
+   stackup. Order JLC081611-2116 by name.

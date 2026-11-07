@@ -113,3 +113,12 @@ without one still has a straight lane out; the QFN ground pads tie into the
 exposed pad instead of taking a via outside. Via's stitching and its router
 model ignore the 0.25 mm hole clearance, so this board keeps 0.15 mm copper
 clearance, which puts a via's hole at 0.25 mm.
+
+## 2026-11-07 — v0.5: 30 mm wide, eight layers
+
+Six layers still left 28 connections open around the P4, and widening the
+board from 26 to 30 mm (the human's call) only took it to 26. The human
+asked why not more layers; the board went to eight (JLC081611-2116: ground
+planes on In1 and In6, four inner routing layers). Its 0.109 mm outer
+prepreg is close enough to the six-layer board's 0.1 mm that the pair
+widths stay: about 104 ohm TMDS and 102 ohm DSI.
