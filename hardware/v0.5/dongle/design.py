@@ -72,7 +72,7 @@ class StickDesign(kicadgen.Design):
 
     def _edge_cuts(self, ns: uuid.UUID) -> list:
         items = super()._edge_cuts(ns)
-        x1, y1, x2, y2 = self.outline
+        _, _, x2, _ = self.outline
         right = next(
             i for i, it in enumerate(items)
             if it[0] == "gr_line" and float(it[1][1]) == x2 and float(it[2][1]) == x2
@@ -526,13 +526,13 @@ def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> tuple[int, list[str]
         return added
 
     for pad in sorted(pads, key=lambda b: int(b.number) % 2):  # the near row first: far stubs pass between it
-        centre, end, (ux, uy), off = _pad_frame(pad, ox, oy)
+        _, end, (ux, uy), off = _pad_frame(pad, ox, oy)
         t, lat = FAN_T[int(pad.number) % 2], FAN_SPREAD * off
         got[pad.number] = place(pad, (end[0] + ux * t + uy * lat, end[1] + uy * t + ux * lat))
     for pad in pads:
         if got[pad.number] is not None:
             continue
-        centre, end, (ux, uy), off = _pad_frame(pad, ox, oy)
+        _, end, (ux, uy), off = _pad_frame(pad, ox, oy)
         sign = 1.0 if off >= 0 else -1.0
         for t in SEARCH_T:
             for lat in SEARCH_LAT:
@@ -599,7 +599,12 @@ def legalize(d: kicadgen.Design, fixed: set[str], keep: dict[str, list[tuple]], 
         if pb.kind in ("thru_hole", "np_thru_hole"):
             holes.append((pb.x1, pb.y1, pb.x2, pb.y2))
     movable = [p for p in d.parts if p.footprint and p.pcb_at and p.ref not in fixed]
-    movable.sort(key=lambda p: -((lambda b: (b[2] - b[0]) * (b[3] - b[1]))(placed_box(p))))
+
+    def area(p: kicadgen.Part) -> float:
+        b = placed_box(p)
+        return (b[2] - b[0]) * (b[3] - b[1])
+
+    movable.sort(key=lambda p: -area(p))
     steps = sorted(
         ((i * 0.25, j * 0.25) for i in range(-24, 25) for j in range(-24, 25)), key=lambda v: math.hypot(*v)
     )
