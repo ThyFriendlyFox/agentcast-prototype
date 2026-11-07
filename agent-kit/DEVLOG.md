@@ -100,3 +100,16 @@ audio, and an ESP32-C6 module for Wi-Fi, on a 72 x 26 mm board. The plug
 footprint now follows the manufacturer drawing: even pins on top, odd below,
 and two slots cut in the board edge. The LT8912B crystal value is not in its
 datasheet and stays open.
+
+## 2026-11-07 — v0.5: six layers, hand-drawn DSI, a fanout that leaves lanes
+
+The P4's 0.35 mm pitch would not route on four layers: every FreeRouting run
+left 20 to 38 connections open. The board went to six layers (JLC06161H-2313,
+two ground planes), and the pairs shrank to suit its 0.1 mm prepreg. The DSI
+pairs are drawn by hand; to keep them from crossing, D0 and D1 have P and N
+swapped, which the LT8912B allows and its driver must undo. Before routing,
+each P4 and LT8912B pad gets a via on a short stub, placed so that a pad
+without one still has a straight lane out; the QFN ground pads tie into the
+exposed pad instead of taking a via outside. Via's stitching and its router
+model ignore the 0.25 mm hole clearance, so this board keeps 0.15 mm copper
+clearance, which puts a via's hole at 0.25 mm.

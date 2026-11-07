@@ -3,7 +3,7 @@
 > **In work.** Made from [v0.4](../v0.4/) (commit `223e73b`). v0.5 drops the
 > Raspberry Pi CM5 and puts our own small computer on a Chromecast-sized stick.
 
-One board, **72 x 26 mm**, 4 layers, parts on both faces. A male HDMI plug
+One board, **72 x 26 mm**, 6 layers, parts on both faces. A male HDMI plug
 (XUNPU HDMI-003) clamps one end; the Wi-Fi antenna is at the other.
 
 | | v0.4 | v0.5 |
@@ -13,6 +13,7 @@ One board, **72 x 26 mm**, 4 layers, parts on both faces. A male HDMI plug
 | HDMI | from the CM5 | LT8912B MIPI DSI to HDMI bridge, with HDMI audio |
 | Wi-Fi | the CM5's | ESP32-C6-MINI-1 module (Wi-Fi 6), SDIO to the P4 |
 | HDMI plug footprint | HDMI Type-A layout, 4 numbers unconfirmed | the XUNPU HDMI-003 drawing, every number |
+| Layers | 4 | 6 (F.Cu, In1 GND, In2, In3, In4 GND, B.Cu), JLCPCB JLC06161H-2313 |
 
 ![layers](dongle/docs/layers.png)
 
@@ -118,10 +119,35 @@ the board edge at the tabs (`StickDesign` cuts them). One change: the pads stop
 0.30 mm short of the edge, the board's copper-to-edge rule. The drawing's slots
 are plated; these are plain cuts, and the shell is soldered at its four tabs.
 
-The four TMDS pairs run 8.7-9.1 mm from the LT8912B to the plug, 0.2 / 0.2 mm
-on F.Cu over the In1.Cu ground plane (104 ohm differential, JLC04161H-7628).
-D1 and CK end on the top contacts; D2 and D0 drop through a via pair to the
-bottom contacts. Skew within each pair: 0.000 mm.
+## Stackup and pairs
+
+6 layers, 1.6 mm, JLCPCB's JLC06161H-2313: F.Cu signal, In1.Cu GND plane,
+In2.Cu and In3.Cu signal, In4.Cu GND plane, B.Cu signal. The 0.35 mm pitch of
+the P4 did not route on 4 layers (20-38 connections left open on every try).
+The prepreg under each outer layer is 0.1 mm (er about 4.05), so the pairs are
+narrow:
+
+| Pairs | Width / gap | Differential impedance |
+|---|---|---|
+| TMDS (LT8912B to the plug), F.Cu over In1 | 0.12 / 0.16 mm | about 101 ohm |
+| DSI (P4 to LT8912B), F.Cu over In1 | 0.14 / 0.21 mm (the P4's 0.35 mm pad pitch) | about 98 ohm |
+
+Check both against JLCPCB's impedance calculator when ordering: kicadgen
+writes a generic stackup into the board file and has no way to set this one,
+so the board file's stackup table is not the one to order.
+
+The four TMDS pairs run 9.3-9.7 mm from the LT8912B to the plug. D1 and CK end
+on the top contacts; D2 and D0 drop through a via pair to the bottom contacts.
+Skew within each pair: 0.000 mm.
+
+The three DSI pairs are drawn by hand (`route_dsi` in `design.py`), not by
+the router: they leave the P4's bottom row, run under it as a U and climb into
+the LT8912B's bottom row. CK crosses D1 on In2.Cu through four vias. Lengths
+21.5-28.8 mm; skew within a pair: D0 1.16 mm, D1 1.16 mm, CK 2.14 mm.
+
+**Firmware must swap the polarity of DSI data lanes D0 and D1** in the
+LT8912B: their P and N are crossed on the board so the pairs do not cross each
+other. The LT8912B datasheet lists its data lanes as "polarity swappable".
 
 ## Open items
 
@@ -132,10 +158,15 @@ bottom contacts. Skew within each pair: 0.000 mm.
 2. **LT8912B crystal frequency.** The datasheet (R1.13) asks for a crystal on
    XTALI/XTALO and gives no value. Y2 is marked "25MHz (confirm)". Ask Lontium
    or a distributor's reference design before ordering.
-3. **DSI routing.** The DSI pairs are routed by FreeRouting, not as matched
-   pairs. Hand-route them as 100 ohm pairs before ordering.
+3. **DSI skew.** The hand-drawn DSI pairs are matched in impedance but not
+   in length: 1.16 mm (D0, D1) and 2.14 mm (CK) within a pair, about 7 and
+   13 ps. Add serpentines to bring each under 0.1 mm before ordering.
 4. **Plated slots.** The plug's drawing plates its two edge slots; this board
    cuts them plain.
 5. **Antenna.** The C6 module's antenna sits over the bare far end (no copper,
    any layer). Check the range in the case.
 6. **Mute switch direction.** Mark which slider end is LIVE on the first article.
+7. **DSI lane polarity.** The LT8912B driver must set the polarity swap on
+   data lanes 0 and 1 (Stackup and pairs). Without it the TV shows nothing.
+8. **Stackup table.** The board file carries kicadgen's generic 6-layer
+   stackup. Order JLC06161H-2313 by name.
