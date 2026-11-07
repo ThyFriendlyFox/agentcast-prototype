@@ -15,7 +15,8 @@ TV, and plays the agent's voice. v0.5 does that with:
 
     workcenter design design.py --route     # from this folder
 
-Board: 72 x 26 mm, 4 layers (F.Cu signal, In1.Cu GND plane, In2.Cu signal, B.Cu signal), 1.6 mm
+Board: 72 x 26 mm, 6 layers (F.Cu signal, In1.Cu GND plane, In2.Cu and In3.Cu signal, In4.Cu GND
+plane, B.Cu signal), 1.6 mm, JLCPCB's JLC06161H-2313 stackup
 (the plug clamps 1.60 mm). Two 0.6 x 0.8 mm slots in the plug end take the plug's
 shell (XUNPU drawing); the outline is drawn by StickDesign below.
 
@@ -62,7 +63,7 @@ MIC_AT = (BX + 38.0, BY + 23.0)
 
 ANTENNA = [(BX, BY), (BX + 6.5, BY), (BX + 6.5, BY + H), (BX, BY + H)]
 
-PAIR_W, PAIR_S = 0.2, 0.2  # 100 ohm differential on F.Cu over In1.Cu (JLC04161H-7628, README)
+PAIR_W, PAIR_S = 0.12, 0.16  # 100 ohm differential on F.Cu over In1.Cu, 0.1 mm of 2313 prepreg (README)
 HALF = (PAIR_W + PAIR_S) / 2
 
 
@@ -264,7 +265,7 @@ def route_tmds(d: kicadgen.Design) -> list[str]:
 # run east under it in three lanes, then up into the LT8912B's bottom row (D0, D1, CK from the left).
 # That U turns each pair over, so the data lanes land P/N reversed (LT_NETS); and CK, in the middle at
 # the P4 but on the right at the LT8912B, has to cross D1: it drops to In2.Cu for the last 3.5 mm.
-DSI_W, DSI_HALF = 0.18, 0.175  # 0.35 mm pitch, the P4's pin pitch: 0.17 mm gaps, about 95 ohm
+DSI_W, DSI_HALF = 0.14, 0.175  # 0.35 mm pitch, the P4's pin pitch: 0.21 mm gaps, about 98 ohm
 LANE_D0, LANE_CK, LANE_D1 = BY + 19.3, BY + 20.05, BY + 20.8  # under SW2 and the mic
 JOG_D1, JOG_CK = BX + 48.7, BX + 50.0  # past SW2: D1 and CK step down to make room for CK's vias
 DOWN_CK, DOWN_D1 = 0.35, 0.8
@@ -589,8 +590,8 @@ def auto_schematic(d: kicadgen.Design, order: list[list[str]], width: float = 80
 
 def build() -> kicadgen.Design:
     d = StickDesign(name="agentcast_dongle", namespace=uuid.UUID("0b9e2d4a-7c31-4f86-b5a2-9d3e61f08c57"))
-    d.copper_layers = 4
-    d.plane_layers = ("In1.Cu",)
+    d.copper_layers = 6
+    d.plane_layers = ("In1.Cu", "In4.Cu")
     d.sheet = "A1"
     d.sch_wires = True
     d.outline = (BX, BY, BX + W, BY + H)
@@ -854,12 +855,12 @@ def build() -> kicadgen.Design:
         obstacles={"U2": (C6_AT[0] - 5.6, C6_AT[1] - 6.85, C6_AT[0] + 5.85, C6_AT[1] + 6.85)},
     )  # fmt: skip
 
-    # Copper: In1.Cu a solid GND plane; In2.Cu a third routing layer (a +3V3 pour there was cut into
-    # islands by the routes, so +3V3 runs as tracks); both faces poured GND.
+    # Copper: In1.Cu and In4.Cu solid GND planes (the references of F.Cu and B.Cu); In2.Cu and In3.Cu
+    # routing layers (on 4 layers the router left 30-odd connections around the P4); both faces poured GND.
     poly = [(BX + 6.8, BY + 0.3), (BX + W - 0.3, BY + 0.3), (BX + W - 0.3, BY + H - 0.3), (BX + 6.8, BY + H - 0.3)]
-    d.zone("GND", layers=("In1.Cu",), polygon=poly, connect="solid")
+    d.zone("GND", layers=("In1.Cu", "In4.Cu"), polygon=poly, connect="solid")
     d.zone("GND", layers=("F.Cu", "B.Cu"), polygon=poly, clearance=0.25, connect="solid")
-    d.keepout(ANTENNA, layers=("F.Cu", "In1.Cu", "In2.Cu", "B.Cu"), name="antenna")
+    d.keepout(ANTENNA, layers=("F.Cu", "In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu", "B.Cu"), name="antenna")
 
     d.tmds_report = route_tmds(d)
     d.dsi_report = route_dsi(d)
