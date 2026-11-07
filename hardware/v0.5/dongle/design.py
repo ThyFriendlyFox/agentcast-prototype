@@ -15,7 +15,7 @@ TV, and plays the agent's voice. v0.5 does that with:
 
     workcenter design design.py --route     # from this folder
 
-Board: 68 x 26 mm, 4 layers (F.Cu signal, In1.Cu GND plane, In2.Cu signal, B.Cu signal), 1.6 mm
+Board: 72 x 26 mm, 4 layers (F.Cu signal, In1.Cu GND plane, In2.Cu signal, B.Cu signal), 1.6 mm
 (the plug clamps 1.60 mm). Two 0.6 x 0.8 mm slots in the plug end take the plug's
 shell (XUNPU drawing); the outline is drawn by StickDesign below.
 
@@ -140,7 +140,9 @@ P4_NETS = {
 
 # LT8912B pin -> net.
 LT_NETS = {
-    1: "DSI_D0_P", 2: "DSI_D0_N", 3: "DSI_D1_P", 4: "DSI_D1_N", 7: "DSI_CK_P", 8: "DSI_CK_N",
+    # Data lanes P/N reversed on purpose (route_dsi): the LT8912B's data lanes are "polarity swappable"
+    # (datasheet, features and pins 1-4); firmware sets the swap. The clock lane is not reversed.
+    1: "DSI_D0_N", 2: "DSI_D0_P", 3: "DSI_D1_N", 4: "DSI_D1_P", 7: "DSI_CK_P", 8: "DSI_CK_N",
     5: "+1V8", 18: "+1V8", 26: "+1V8", 33: "+1V8", 34: "+1V8", 41: "+1V8", 50: "+1V8", 52: "+1V8", 57: "+1V8",
     6: "GND", 17: "GND", 23: "GND", 29: "GND", 32: "GND", 36: "GND", 42: "GND", 49: "GND", 51: "GND", 56: "GND",
     65: "GND",
@@ -255,6 +257,94 @@ def route_tmds(d: kicadgen.Design) -> list[str]:
         report.append(
             f"{name}: P {seg_len(p):.3f} mm, N {seg_len(n):.3f} mm, skew {abs(seg_len(p) - seg_len(n)):.3f} mm"
         )
+    return report
+
+
+# DSI, drawn by hand (route_dsi). The pairs leave the P4's bottom row (D1, CK, D0 from the left) and
+# run east under it in three lanes, then up into the LT8912B's bottom row (D0, D1, CK from the left).
+# That U turns each pair over, so the data lanes land P/N reversed (LT_NETS); and CK, in the middle at
+# the P4 but on the right at the LT8912B, has to cross D1: it drops to In2.Cu for the last 3.5 mm.
+DSI_W, DSI_HALF = 0.18, 0.175  # 0.35 mm pitch, the P4's pin pitch: 0.17 mm gaps, about 95 ohm
+LANE_D0, LANE_CK, LANE_D1 = BY + 19.3, BY + 20.05, BY + 20.8  # under SW2 and the mic
+JOG_D1, JOG_CK = BX + 48.7, BX + 50.0  # past SW2: D1 and CK step down to make room for CK's vias
+DOWN_CK, DOWN_D1 = 0.35, 0.8
+CK_VIAS_IN = ((BX + 53.9, LANE_CK + DOWN_CK - DSI_HALF), (BX + 54.5, BY + 20.9))  # P, N: lane to In2.Cu
+CK_VIAS_OUT = ((LT_AT[0] - 0.7, BY + 18.4), (LT_AT[0], BY + 18.95))  # P, N: In2.Cu to the pads
+V1V8_VIA = (LT_AT[0] - 1.3, BY + 19.4)  # U3 pin 5 (+1V8), boxed in between D1 and CK
+
+
+def route_dsi(d: kicadgen.Design) -> list[str]:
+    """The three DSI pairs, P4 (U1) to LT8912B (U3); see the note above. Returns a length report."""
+
+    def pair(corners: list, a: tuple, b: tuple) -> tuple[list, list]:
+        """Two traces either side of the chamfered centre line; the one starting nearer pad `a` first."""
+        centre = chamfered(corners, 0.4)
+        centre = [q for i, q in enumerate(centre) if i == 0 or math.dist(q, centre[i - 1]) > 1e-6]
+        l, r = offset(centre, DSI_HALF), offset(centre, -DSI_HALF)
+        return (l, r) if math.dist(l[0], a) < math.dist(r[0], a) else (r, l)
+
+    def rnd(pts: list) -> list:
+        return [(round(x, 4), round(y, 4)) for x, y in pts]
+
+    def put(net: str, pts: list, layer: str = "F.Cu") -> None:
+        d.track(net, rnd(pts), layer, width=DSI_W)
+
+    report = []
+    lengths = {}
+    lanes = (("D0", "39", "40", "2", "1", LANE_D0), ("D1", "35", "36", "4", "3", LANE_D1))
+    for name, up, un, lp, ln, lane in lanes:
+        (xp, yp), (xn, yn) = pad_at(d, "U1", up), pad_at(d, "U1", un)
+        (xlp, ylp), (xln, yln) = pad_at(d, "U3", lp), pad_at(d, "U3", ln)
+        x0, xl = (xp + xn) / 2, (xlp + xln) / 2
+        if name == "D0":
+            corners = [(x0, yp), (x0, lane), (xl, lane), (xl, ylp)]
+        else:
+            low = lane + DOWN_D1
+            corners = [(x0, yp), (x0, lane), (JOG_D1, lane), (JOG_D1 + DOWN_D1, low), (xl, low), (xl, ylp)]
+        p, n = pair(corners, (xp, yp), (xn, yn))
+        p[0], n[0] = (xp, yp), (xn, yn)
+        # the U puts the P4's P trace on the LT8912B pin that LT_NETS names P (the swapped one)
+        tp, tn = (xlp, ylp), (xln, yln)
+        p[-1], n[-1] = (tp, tn) if math.dist(p[-1], tp) < math.dist(n[-1], tp) else (tn, tp)
+        put(f"DSI_{name}_P", p)
+        put(f"DSI_{name}_N", n)
+        lengths[name] = (seg_len(p), seg_len(n))
+
+    # CK: F.Cu lane, then In2.Cu under D1's riser, then up into pins 7 / 8.
+    (xp, yp), (xn, yn) = pad_at(d, "U1", "38"), pad_at(d, "U1", "37")
+    x0 = (xp + xn) / 2
+    low = LANE_CK + DOWN_CK
+    (vpx, vpy), (vnx, vny) = CK_VIAS_IN
+    (opx, opy), (onx, ony) = CK_VIAS_OUT
+    corners = [(x0, yp), (x0, LANE_CK), (JOG_CK, LANE_CK), (JOG_CK + DOWN_CK, low), (vpx - 0.4, low)]
+    p, n = pair(corners, (xp, yp), (xn, yn))
+    p[0], n[0] = (xp, yp), (xn, yn)
+    p += [(vpx, vpy)]
+    n += [(n[-1][0] + 0.3, vny), (vnx, vny)]
+    put("DSI_CK_P", p)
+    put("DSI_CK_N", n)
+    pi = [(vpx, vpy), (opx - 0.3, vpy), (opx, vpy - 0.3), (opx, opy)]
+    ni = [(vnx, vny), (onx - 0.3, vny), (onx, vny - 0.3), (onx, ony)]
+    put("DSI_CK_P", pi, "In2.Cu")
+    put("DSI_CK_N", ni, "In2.Cu")
+    (x7, y7), (x8, y8) = pad_at(d, "U3", "7"), pad_at(d, "U3", "8")
+    pe = [(opx, opy), (x7, opy - 0.5), (x7, y7)]
+    ne = [(onx, ony), (x8, ony - 0.35), (x8, y8)]
+    put("DSI_CK_P", pe)
+    put("DSI_CK_N", ne)
+    for net, at in (("DSI_CK_P", (vpx, vpy)), ("DSI_CK_N", (vnx, vny)), ("DSI_CK_P", (opx, opy)), ("DSI_CK_N", (onx, ony))):
+        d.via(net, round(at[0], 4), round(at[1], 4))
+    lengths["CK"] = (seg_len(p) + seg_len(pi) + seg_len(pe), seg_len(n) + seg_len(ni) + seg_len(ne))
+
+    # U3 pin 5 (+1V8) between D1 and CK: down to a via of its own. Pin 6 (GND) into the exposed pad.
+    (x5, y5), (x6, y6) = pad_at(d, "U3", "5"), pad_at(d, "U3", "6")
+    vx, vy = V1V8_VIA
+    d.track("+1V8", rnd([(x5, y5), (x5, vy - 0.6), (vx, vy - 0.5), (vx, vy)]), "F.Cu", width=0.2)
+    d.via("+1V8", vx, vy)
+    d.track("GND", rnd([(x6, y6), (x6, y6 - 1.0)]), "F.Cu", width=0.2)
+
+    for name, (lp, ln) in lengths.items():
+        report.append(f"{name}: P {lp:.3f} mm, N {ln:.3f} mm, skew {abs(lp - ln):.3f} mm")
     return report
 
 
@@ -528,8 +618,8 @@ def build() -> kicadgen.Design:
     for dx, dy, rot in ((-3.6, -1.0, 90), (-3.6, 1.0, 90), (3.6, -2.0, 90), (3.6, 0.8, 90), (0.0, -3.6, 0), (-1.8, 3.6, 0), (1.8, 3.6, 0)):
         C("100n", (ux + dx, uy + dy), "+1V8", rot=rot)
     C("10u", (ux - 2.0, uy - 6.0), "+1V8", layer="F.Cu")
-    R("6.04k", (ux - 4.5, uy + 6.0), "LT_R6K", "GND", layer="F.Cu")  # LT8912B pin 13: external 6K
-    C("2.2n", (ux - 2.0, uy + 6.0), "LT_LPF", layer="F.Cu")  # pin 35: 2 nF loop filter
+    R("6.04k", (ux + 3.0, uy + 6.2), "LT_R6K", "GND", layer="F.Cu")  # LT8912B pin 13: external 6K
+    C("2.2n", (ux + 2.4, uy - 6.0), "LT_LPF", layer="F.Cu")  # pin 35: 2 nF loop filter
     # LT8912B crystal: the datasheet asks for one on XTALI/XTALO but gives no frequency (README).
     add("Y2", "Device:Crystal_GND24", "25MHz (confirm)", XTAL, (ux - 6.8, uy), {"1": "LT_XI", "3": "LT_XO", "2": "GND", "4": "GND"}, rot=90)
     C("12p", (ux - 6.8, uy - 3.0), "LT_XI", layer="F.Cu")
@@ -619,9 +709,9 @@ def build() -> kicadgen.Design:
     add("SW2", "Switch:SW_SPDT", "PCM12SMTR", "Button_Switch_SMD:SW_SPDT_PCM12", (MUTE_AT[0] - BX, MUTE_AT[1] - BY),
         {"2": "+3V3", "1": "MIC_3V3", "3": "MUTED"})  # fmt: skip
     R("100k", (41.0, 21.0), "MIC_3V3", "GND", rot=90)  # bleed; holds U11's enable low when muted
-    R("1k", (49.8, 21.4), "MIC_3V3", "LED_LIVE_A", layer="F.Cu")
+    R("1k", (49.8, 21.4), "MIC_3V3", "LED_LIVE_A", layer="B.Cu")
     add("D1", "Device:LED", "green LIVE", LED0603, (49.8, 23.0), {"2": "LED_LIVE_A", "1": "GND"}, rot=180)
-    R("1k", (49.8, 24.6), "MUTED", "LED_MUTED_A", layer="F.Cu")
+    R("1k", (49.8, 24.6), "MUTED", "LED_MUTED_A", layer="B.Cu")
     add("D2", "Device:LED", "red MUTED", LED0603, (52.2, 23.6), {"2": "LED_MUTED_A", "1": "GND"}, rot=90)
     R("10k", (42.2, 21.0), "MIC_3V3", "MIC_LIVE", rot=90)
     R("100k", (43.4, 21.0), "MIC_LIVE", "GND", rot=90)
@@ -643,7 +733,7 @@ def build() -> kicadgen.Design:
     # ---------------------------------------------------------------- LEDs
     R("2.2k", (30.5, 2.0), "+5V", "LED_PWR_A", layer="F.Cu")
     add("D3", "Device:LED", "green PWR", LED0603, (30.5, 3.6), {"2": "LED_PWR_A", "1": "GND"}, rot=180)
-    R("330", (52.0, 21.0), "STATE_LED", "LED_STATE_A", layer="F.Cu")
+    R("330", (52.0, 21.0), "STATE_LED", "LED_STATE_A", layer="B.Cu")
     add("D4", "Device:LED", "amber STATE", LED0603, (54.4, 23.6), {"2": "LED_STATE_A", "1": "GND"}, rot=90)
 
     for part in d.parts:  # references on the fab layer only for the small parts (README)
@@ -662,13 +752,15 @@ def build() -> kicadgen.Design:
     # (F.Cu), the exposed pads' ground vias (B.Cu), the mic's sound hole. The C6 module's box is its
     # body's courtyard (module y -5.6..5.85, x +/-6.85, turned); its antenna strip is off limits anyway.
     vias = ep_vias(d, "U1", "105", 7.5, 4) + ep_vias(d, "U3", "65", 6.2, 3)
-    via_boxes = [(x - 0.4, y - 0.4, x + 0.4, y + 0.4) for x, y in vias]
+    via_boxes = [(x - 0.4, y - 0.4, x + 0.4, y + 0.4) for x, y in [*vias, *CK_VIAS_IN, *CK_VIAS_OUT, V1V8_VIA]]
     mx, my = MIC_AT
     d.moved = legalize(
         d,
         fixed={"U1", "U2", "U3", "J3", "J3B", "J4", "J6", "SW2", "MK1"},
         keep={
             "F.Cu": [(LT_AT[0] + 3.8, BY + 8.4, PLUG_AT[0] - 2.6, BY + 17.6),
+                     (P4_AT[0] - 1.8, BY + 18.25, LT_AT[0] + 0.6, BY + 21.0),  # DSI lanes
+                     (JOG_D1 - 0.4, BY + 21.0, LT_AT[0] - 1.8, BY + 21.95),
                      (mx - 0.6, my + 0.1, mx + 0.6, my + 1.3)],
             "B.Cu": [*via_boxes, (mx - 0.6, my + 0.1, mx + 0.6, my + 1.3)],
         },
@@ -683,6 +775,7 @@ def build() -> kicadgen.Design:
     d.keepout(ANTENNA, layers=("F.Cu", "In1.Cu", "In2.Cu", "B.Cu"), name="antenna")
 
     d.tmds_report = route_tmds(d)
+    d.dsi_report = route_dsi(d)
     tie_pad_grounds(d, {"U1": (0, 0), "U3": (0, 0), "J3": (-1, 0), "J3B": (-1, 0)})
     stitch_grounds(d)
     d.model("J3", "${KIPRJMOD}/models/hdmi_a_plug.wrl", offset=(0.0, -5.65, -2.9))
