@@ -350,15 +350,26 @@ def route_dsi(d: kicadgen.Design) -> list[str]:
 
 
 def tie_pad_grounds(d: kicadgen.Design, refs: dict[str, tuple[int, int]]) -> None:
-    """A via and a short track for each GND pad of the fine-pitch parts, off the pad's end."""
+    """Each GND pad of the fine-pitch parts joins ground: a QFN's straight into its exposed pad on a
+    short inward track (the vias there take it down), otherwise a via and a short track off the
+    pad's end. The inward tie keeps the ring outside the pads free for signals to escape."""
     r, drill = d.via_size / 2, d.via_drill
     for part in d.parts:
         if part.ref not in refs:
             continue
-        for pad in [b for b in d.pad_boxes() if b.ref == part.ref and b.net == "GND" and b.kind == "smd"]:
-            if (pad.x2 - pad.x1) > 2 and (pad.y2 - pad.y1) > 2:
-                continue  # an exposed pad: vias inside it instead
+        gnd = [b for b in d.pad_boxes() if b.ref == part.ref and b.net == "GND" and b.kind == "smd"]
+        ep = next((b for b in gnd if (b.x2 - b.x1) > 2 and (b.y2 - b.y1) > 2), None)
+        for pad in gnd:
+            if pad is ep:
+                continue  # vias inside it instead
             cx, cy = round((pad.x1 + pad.x2) / 2, 3), round((pad.y1 + pad.y2) / 2, 3)
+            if ep is not None:
+                tall = (pad.y2 - pad.y1) > (pad.x2 - pad.x1)
+                ix = cx if tall else (ep.x1 + 0.1 if cx < ep.x1 else ep.x2 - 0.1)
+                iy = (ep.y1 + 0.1 if cy < ep.y1 else ep.y2 - 0.1) if tall else cy
+                if _stub_fits(d, "GND", (cx, cy), (ix, iy), 0.15, part.pcb_layer, d.pad_boxes()):
+                    d.track("GND", [(cx, cy), (round(ix, 3), round(iy, 3))], part.pcb_layer, width=0.15)
+                    continue
             first = refs[part.ref]
             if first == (0, 0):  # off the pad's outer end, away from the part's centre
                 ox, oy = part.pcb_at
@@ -452,45 +463,89 @@ def _stub_fits(d: kicadgen.Design, net: str, a: tuple, b: tuple, w: float, layer
     return True
 
 
-def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> int:
+def _pad_frame(pad, ox: float, oy: float) -> tuple:
+    """Centre, outer end, outward unit vector and lateral offset from the part's centre line of a QFN pad."""
+    cx, cy = (pad.x1 + pad.x2) / 2, (pad.y1 + pad.y2) / 2
+    if (pad.y2 - pad.y1) > (pad.x2 - pad.x1):
+        ux, uy = 0.0, (1.0 if cy > oy else -1.0)
+        end = (cx, pad.y2 if uy > 0 else pad.y1)
+    else:
+        ux, uy = (1.0 if cx > ox else -1.0), 0.0
+        end = (pad.x2 if ux > 0 else pad.x1, cy)
+    off = (cx - ox) * uy + (cy - oy) * ux  # along the lateral axis the via search uses
+    return (cx, cy), end, (ux, uy), off
+
+
+def _try_spot(d: kicadgen.Design, pad, centre, spot, boxes) -> tuple | None:
+    """Stub and via for `pad` at `spot` when both keep every clearance; returns what it added."""
+    vx, vy = round(spot[0], 3), round(spot[1], 3)
+    if not d._via_fits(vx, vy, d.via_size / 2 + HOLE_MARGIN, d.via_drill, pad.net, boxes):
+        return None
+    if not _stub_fits(d, pad.net, centre, (vx, vy), 0.12, pad.layer, boxes):
+        return None
+    net = pad.net.removeprefix("/")  # pad boxes carry the board's net name
+    d.track(net, [(round(centre[0], 3), round(centre[1], 3)), (vx, vy)], pad.layer, width=0.12)
+    d.via(net, vx, vy)
+    return d.segments[-1], d.vias[-1]
+
+
+FAN_T, FAN_SPREAD, ESCAPE = (0.5, 1.3), 0.3, 0.8
+SEARCH_T = (0.45, 0.75, 1.05, 1.35, 1.65, 1.95, 2.3, 2.7, 3.1, 3.5)
+SEARCH_LAT = (0.0, 0.2, -0.2, 0.4, -0.4, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -1.5)
+
+
+def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> tuple[int, list[str]]:
     """A via for each signal and supply pad of a fine-pitch part, on a short stub off the pad's outer
     end, before routing: FreeRouting then only joins vias, which it does far better than threading
-    0.35 mm pitch pads. Each pad tries rows further out and a little to either side; the first spot
-    whose via and stub keep every clearance wins, so neighbours stagger. Returns the vias placed."""
-    r, drill = d.via_size / 2, d.via_drill
+    0.35 mm pitch pads. A straight stub can never pass a neighbour's via at that pitch, so the vias
+    fan out: two rows (even pads near, odd pads further), each via pushed sideways away from the
+    middle of its side by FAN_SPREAD of its offset. A pad whose fan spot is taken (a part, a hand
+    route) searches rows further out and to either side. Returns (vias placed, pads left without one)."""
     part = next(p for p in d.parts if p.ref == ref)
     ox, oy = part.pcb_at
-    placed = 0
     pads = [b for b in d.pad_boxes() if b.ref == ref and b.kind == "smd" and b.net and b.net != "GND"]
     pads = [b for b in pads if b.net.removeprefix("/") not in skip and not b.net.startswith("unconnected")]
     pads = [b for b in pads if (b.x2 - b.x1) < 2 and (b.y2 - b.y1) < 2]  # not the exposed pad
+    got = {b.number: None for b in pads}
+    boxes = d.pad_boxes()
+
+    def lane_free(pad) -> bool:
+        """A pad without a via keeps a straight lane out for the router, ESCAPE mm past its end."""
+        centre, end, (ux, uy), _ = _pad_frame(pad, ox, oy)
+        return _stub_fits(d, pad.net, centre, (end[0] + ux * ESCAPE, end[1] + uy * ESCAPE), 0.12, pad.layer, boxes)
+
+    open_lane = {b.number for b in pads if lane_free(b)}  # lanes other parts already close are not ours to keep
+
+    def place(pad, spot) -> tuple | None:
+        """_try_spot, kept only if every pad still without a via keeps its lane."""
+        added = _try_spot(d, pad, _pad_frame(pad, ox, oy)[0], spot, boxes)
+        if added and not all(lane_free(b) for b in pads if got[b.number] is None and b is not pad and b.number in open_lane):
+            d.segments.remove(added[0])
+            d.vias.remove(added[1])
+            return None
+        return added
+
+    for pad in sorted(pads, key=lambda b: int(b.number) % 2):  # the near row first: far stubs pass between it
+        centre, end, (ux, uy), off = _pad_frame(pad, ox, oy)
+        t, lat = FAN_T[int(pad.number) % 2], FAN_SPREAD * off
+        got[pad.number] = place(pad, (end[0] + ux * t + uy * lat, end[1] + uy * t + ux * lat))
     for pad in pads:
-        boxes = d.pad_boxes()
-        cx, cy = (pad.x1 + pad.x2) / 2, (pad.y1 + pad.y2) / 2
-        tall = (pad.y2 - pad.y1) > (pad.x2 - pad.x1)
-        if tall:
-            ux, uy = 0.0, (1.0 if cy > oy else -1.0)
-            end = (cx, pad.y2 if uy > 0 else pad.y1)
-        else:
-            ux, uy = (1.0 if cx > ox else -1.0), 0.0
-            end = (pad.x2 if ux > 0 else pad.x1, cy)
-        done = False
-        for t in (0.45, 0.75, 1.05, 1.35, 1.65, 1.95, 2.3, 2.7):
-            for lat in (0.0, 0.2, -0.2, 0.4, -0.4, 0.6, -0.6, 0.9, -0.9):
-                vx, vy = round(end[0] + ux * t + uy * lat, 3), round(end[1] + uy * t + ux * lat, 3)
-                if not d._via_fits(vx, vy, r + HOLE_MARGIN, drill, pad.net, boxes):
-                    continue
-                if not _stub_fits(d, pad.net, (cx, cy), (vx, vy), 0.12, pad.layer, boxes):
-                    continue
-                net = pad.net.removeprefix("/")  # pad boxes carry the board's net name
-                d.track(net, [(round(cx, 3), round(cy, 3)), (vx, vy)], pad.layer, width=0.12)
-                d.via(net, vx, vy)
-                placed += 1
-                done = True
+        if got[pad.number] is not None:
+            continue
+        centre, end, (ux, uy), off = _pad_frame(pad, ox, oy)
+        sign = 1.0 if off >= 0 else -1.0
+        for t in SEARCH_T:
+            for lat in SEARCH_LAT:
+                lat = FAN_SPREAD * off + sign * lat
+                spot = (end[0] + ux * t + uy * lat, end[1] + uy * t + ux * lat)
+                got[pad.number] = place(pad, spot)
+                if got[pad.number]:
+                    break
+            if got[pad.number]:
                 break
-            if done:
-                break
-    return placed
+    left = sorted((n for n, g in got.items() if g is None), key=int)
+    nets = {b.number: b.net + ("" if lane_free(b) else " (boxed in)" if b.number in open_lane else " (no lane)") for b in pads}
+    return sum(g is not None for g in got.values()), [f"{ref}.{n} {nets[n]}" for n in left]
 
 
 def ep_vias(d: kicadgen.Design, ref: str, number: str, side: float, n: int) -> list[tuple[float, float]]:
@@ -709,7 +764,7 @@ def build() -> kicadgen.Design:
     R("6.04k", (ux + 3.0, uy + 6.2), "LT_R6K", "GND", layer="F.Cu")  # LT8912B pin 13: external 6K
     C("2.2n", (ux + 2.4, uy - 6.0), "LT_LPF", layer="F.Cu")  # pin 35: 2 nF loop filter
     # LT8912B crystal: the datasheet asks for one on XTALI/XTALO but gives no frequency (README).
-    add("Y2", "Device:Crystal_GND24", "25MHz (confirm)", XTAL, (ux - 6.8, uy), {"1": "LT_XI", "3": "LT_XO", "2": "GND", "4": "GND"}, rot=90)
+    add("Y2", "Device:Crystal_GND24", "25MHz (confirm)", XTAL, (ux - 7.4, uy), {"1": "LT_XI", "3": "LT_XO", "2": "GND", "4": "GND"}, rot=90)
     C("12p", (ux - 6.8, uy - 3.0), "LT_XI", layer="F.Cu")
     C("12p", (ux - 6.8, uy + 3.0), "LT_XO", layer="F.Cu")
     # +1V8: LT8912B and P4 IO bank 6.
