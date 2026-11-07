@@ -284,13 +284,17 @@ def tie_pad_grounds(d: kicadgen.Design, refs: dict[str, tuple[int, int]]) -> Non
                     break
 
 
-# The board's hole clearance (0.25 mm from a 0.2 mm hole) reaches past a 0.4 mm via's copper
-# clearance (0.12 mm); a via placed beside a pad grows by this much in the fit check.
-HOLE_MARGIN = 0.2
+# A via placed beside a pad grows by this much in the fit check: a little room on top of the
+# 0.25 mm hole clearance that the 0.15 mm copper clearance already gives a 0.4 / 0.2 mm via.
+HOLE_MARGIN = 0.02
 
 
-def stitch_grounds(d: kicadgen.Design, gap: float = 0.1) -> int:
-    """kicadgen's stitch_pads, with the hole clearance kept: a GND via beside each GND pad on a pour."""
+def stitch_grounds(d: kicadgen.Design, gaps: tuple[float, ...] = (0.1, 0.25, 0.45)) -> int:
+    """kicadgen's stitch_pads, with the hole clearance kept: a GND via beside each GND pad on a pour.
+
+    Tries each side at the nearest gap first; a via further out than the first gap gets a short
+    track to its pad, so a pad boxed in by its neighbours (the decoupling under the LT8912B) still
+    reaches the plane. Returns the number of vias placed."""
     r, drill = d.via_size / 2, d.via_drill
     boxes = d.pad_boxes()
     placed = 0
@@ -298,9 +302,14 @@ def stitch_grounds(d: kicadgen.Design, gap: float = 0.1) -> int:
         if pad.net != "GND" or pad.kind != "smd" or pad.layer not in ("F.Cu", "B.Cu"):
             continue
         cx, cy = (pad.x1 + pad.x2) / 2, (pad.y1 + pad.y2) / 2
-        for vx, vy in ((cx, pad.y2 + gap + r), (cx, pad.y1 - gap - r), (pad.x2 + gap + r, cy), (pad.x1 - gap - r, cy)):
-            if d._via_fits(vx, vy, r + HOLE_MARGIN, drill, "GND", boxes):
-                d.via("GND", round(vx, 3), round(vy, 3))
+        for gap in gaps:
+            spots = ((cx, pad.y2 + gap + r), (cx, pad.y1 - gap - r), (pad.x2 + gap + r, cy), (pad.x1 - gap - r, cy))
+            spot = next((v for v in spots if d._via_fits(v[0], v[1], r + HOLE_MARGIN, drill, "GND", boxes)), None)
+            if spot:
+                vx, vy = round(spot[0], 3), round(spot[1], 3)
+                if gap > gaps[0]:
+                    d.track("GND", [(round(cx, 3), round(cy, 3)), (vx, vy)], pad.layer, width=0.2)
+                d.via("GND", vx, vy)
                 placed += 1
                 break
     return placed
@@ -412,7 +421,9 @@ def build() -> kicadgen.Design:
     d.symbol_dirs = {"Agentcast": LIB / "agentcast.kicad_sym"}
     d.footprint_dirs = {"Agentcast": LIB / "agentcast.pretty"}
     d.track_width = 0.12
-    d.clearance = 0.12
+    # 0.15, not 0.12: a 0.4 / 0.2 mm via's ring (0.1) plus 0.15 keeps its hole 0.25 mm from other
+    # copper, the board's hole clearance, which the router does not model by itself.
+    d.clearance = 0.15
     d.edge_clearance = 0.3
     d.via_size = 0.4
     d.via_drill = 0.2
@@ -421,7 +432,7 @@ def build() -> kicadgen.Design:
     d.net_classes = {
         "HDMI": {"width": PAIR_W, "clearance": 0.15, "via": 0.4, "via_drill": 0.2,
                  "nets": [f"HDMI_{t[4]}_{s}" for t in TMDS for s in "PN"]},
-        "Power": {"width": 0.2, "clearance": 0.12, "via": 0.4, "via_drill": 0.2,
+        "Power": {"width": 0.2, "clearance": 0.15, "via": 0.4, "via_drill": 0.2,
                   "nets": ["GND", "+5V", "+3V3", "VDD_HP", "+1V8"]},
     }  # fmt: skip
     d.power_nets = {"GND": "GND", "+5V": "+5V", "+3V3": "+3V3", "+1V8": "+1V8", "+5VP": "+5VP", "VDD_HP": "+1V1",
