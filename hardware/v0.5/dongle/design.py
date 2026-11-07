@@ -34,6 +34,7 @@ Area rules (P3 step 4):
 from __future__ import annotations
 
 import csv
+import heapq
 import itertools
 import math
 import uuid
@@ -495,6 +496,46 @@ SEARCH_T = (0.45, 0.75, 1.05, 1.35, 1.65, 1.95, 2.3, 2.7, 3.1, 3.5)
 SEARCH_LAT = (0.0, 0.2, -0.2, 0.4, -0.4, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -1.5)
 
 
+FAN_MAZE = True
+FAN_PITCH, FAN_REACH = 0.6, 0.6  # the fan's via pitch, and how far past the pad end its middle via stands
+
+
+def _runs(pads: list, ox: float, oy: float) -> list[list]:
+    """Runs of neighbouring pads on one side, in order along the side, the longest run first."""
+    side = {b.number: _pad_frame(b, ox, oy)[2] for b in pads}
+    runs: list[list] = []
+    for b in sorted(pads, key=lambda b: int(b.number)):
+        if runs and int(b.number) - int(runs[-1][-1].number) == 1 and side[b.number] == side[runs[-1][-1].number]:
+            runs[-1].append(b)
+        else:
+            runs.append([b])
+    for run in runs:
+        run.sort(key=lambda b: _pad_frame(b, ox, oy)[3])  # along the lateral axis
+    return sorted(runs, key=len, reverse=True)
+
+
+def _fan_path(d: kicadgen.Design, pad, ox: float, oy: float, boxes: list, reach: float, shift: float) -> tuple | None:
+    """Straight out of the pad, then 45 degrees sideways by `shift` to a via `reach` mm past the pad's
+    end: a run's tracks keep the 0.35 mm pitch while straight and splay into one row of vias
+    FAN_PITCH apart, so no track passes between two vias."""
+    centre, end, (ux, uy), _ = _pad_frame(pad, ox, oy)
+    lx, ly = uy, ux  # the lateral axis _pad_frame's offset is measured on
+    bend = reach - abs(shift)
+    pts = [centre, (end[0] + ux * bend, end[1] + uy * bend), (end[0] + ux * reach + lx * shift, end[1] + uy * reach + ly * shift)]
+    pts = [(round(x, 3), round(y, 3)) for x, y in pts]
+    if abs(shift) < 0.001:
+        pts = [pts[0], pts[2]]
+    vx, vy = pts[-1]
+    if not d._via_fits(vx, vy, d.via_size / 2 + HOLE_MARGIN, d.via_drill, pad.net, boxes):
+        return None
+    if not all(_stub_fits(d, pad.net, a, b, 0.12, pad.layer, boxes) for a, b in itertools.pairwise(pts)):
+        return None
+    name = pad.net.removeprefix("/")
+    d.track(name, pts, pad.layer, width=0.12)
+    d.via(name, vx, vy)
+    return d.segments[-(len(pts) - 1):], d.vias[-1]
+
+
 def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> tuple[int, list[str]]:
     """A via for each signal and supply pad of a fine-pitch part, on a short stub off the pad's outer
     end, before routing: FreeRouting then only joins vias, which it does far better than threading
@@ -526,7 +567,19 @@ def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> tuple[int, list[str]
             return None
         return added
 
+    if FAN_MAZE:
+        for run in _runs(pads, ox, oy):
+            mid = (len(run) - 1) / 2
+            reach = FAN_REACH + mid * (FAN_PITCH - 0.35)
+            for i in sorted(range(len(run)), key=lambda i: abs(i - mid)):
+                got[run[i].number] = _fan_path(d, run[i], ox, oy, boxes, reach, (i - mid) * (FAN_PITCH - 0.35))
+        for run in _runs(pads, ox, oy):  # what the fan could not place: a path search, near rows first
+            for pad in run:
+                if got[pad.number] is None:
+                    got[pad.number] = _maze_escape(d, pad, ox, oy, boxes)
     for pad in sorted(pads, key=lambda b: int(b.number) % 2):  # the near row first: far stubs pass between it
+        if got[pad.number] is not None:
+            continue
         _, end, (ux, uy), off = _pad_frame(pad, ox, oy)
         t, lat = FAN_T[int(pad.number) % 2], FAN_SPREAD * off
         got[pad.number] = place(pad, (end[0] + ux * t + uy * lat, end[1] + uy * t + ux * lat))
@@ -544,9 +597,119 @@ def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> tuple[int, list[str]
                     break
             if got[pad.number]:
                 break
+    for pad in sorted(pads, key=lambda b: abs(_pad_frame(b, ox, oy)[3]), reverse=True):  # corners first
+        if got[pad.number] is None:
+            got[pad.number] = _maze_escape(d, pad, ox, oy, boxes)
     left = sorted((n for n, g in got.items() if g is None), key=int)
     nets = {b.number: b.net + ("" if lane_free(b) else " (boxed in)" if b.number in open_lane else " (no lane)") for b in pads}
     return sum(g is not None for g in got.values()), [f"{ref}.{n} {nets[n]}" for n in left]
+
+
+MAZE_STEP, MAZE_REACH = 0.025, 3.0
+
+
+def _maze_escape(d: kicadgen.Design, pad, ox: float, oy: float, boxes: list, reach: float = 0.0) -> tuple | None:
+    """A bent stub on the pad's layer to the nearest free via spot, for a pad no straight stub serves:
+    its neighbours' vias stand 1-1.6 mm out, so a straight line always meets one. Dijkstra on a
+    MAZE_STEP grid anchored on the pad's centre, 45 degree moves, turns cost extra; the grid only
+    proposes, _stub_fits and _via_fits decide. Returns the tracks and via it added."""
+    centre, end, (ux, uy), _ = _pad_frame(pad, ox, oy)
+    net, layer, w = pad.net, pad.layer, 0.12
+    step, n = MAZE_STEP, int(MAZE_REACH / MAZE_STEP)
+    need = d.clearance + 0.01 + w / 2 + 0.018  # the grid's own error, step / sqrt(2)
+    vneed = d.clearance + d.via_size / 2 + HOLE_MARGIN + 0.018
+    lo_x, hi_x, lo_y, hi_y = centre[0] - MAZE_REACH, centre[0] + MAZE_REACH, centre[1] - MAZE_REACH, centre[1] + MAZE_REACH
+    track_block, via_block = set(), set()
+
+    def mark(x1, y1, x2, y2, grow, into):
+        """Cells closer than `grow` to the box (x1, y1, x2, y2)."""
+        i1, i2 = math.floor((x1 - grow - centre[0]) / step), math.ceil((x2 + grow - centre[0]) / step)
+        j1, j2 = math.floor((y1 - grow - centre[1]) / step), math.ceil((y2 + grow - centre[1]) / step)
+        for i in range(max(i1, -n), min(i2, n) + 1):
+            px = centre[0] + i * step
+            for j in range(max(j1, -n), min(j2, n) + 1):
+                py = centre[1] + j * step
+                if math.hypot(max(x1 - px, 0.0, px - x2), max(y1 - py, 0.0, py - y2)) < grow:
+                    into.add((i, j))
+
+    for bx in boxes:
+        if bx.x2 < lo_x - 1 or bx.x1 > hi_x + 1 or bx.y2 < lo_y - 1 or bx.y1 > hi_y + 1:
+            continue
+        if bx.net != net:
+            mark(bx.x1, bx.y1, bx.x2, bx.y2, vneed, via_block)
+            if bx.layer == layer or bx.kind != "smd":
+                mark(bx.x1, bx.y1, bx.x2, bx.y2, need, track_block)
+    for onet, p0, p1, ow, olayer in d.segments:
+        if onet.removeprefix("/") == net.removeprefix("/"):
+            continue
+        if max(p0[0], p1[0]) < lo_x - 1 or min(p0[0], p1[0]) > hi_x + 1:
+            continue
+        if max(p0[1], p1[1]) < lo_y - 1 or min(p0[1], p1[1]) > hi_y + 1:
+            continue
+        k = max(2, int(math.dist(p0, p1) / (step / 2)) + 1)
+        for t in range(k):
+            q = (p0[0] + (p1[0] - p0[0]) * t / (k - 1), p0[1] + (p1[1] - p0[1]) * t / (k - 1))
+            mark(q[0], q[1], q[0], q[1], vneed + ow / 2, via_block)
+            if olayer == layer:
+                mark(q[0], q[1], q[0], q[1], need + ow / 2, track_block)
+    for onet, (vx, vy), size, _drill in d.vias:
+        if onet.removeprefix("/") != net.removeprefix("/") and lo_x - 1 < vx < hi_x + 1 and lo_y - 1 < vy < hi_y + 1:
+            mark(vx, vy, vx, vy, need + size / 2, track_block)
+            mark(vx, vy, vx, vy, vneed + size / 2 + 0.05, via_block)
+
+    def at(c):
+        return (round(centre[0] + c[0] * step, 3), round(centre[1] + c[1] * step, 3))
+
+    def out_of_pad(c):
+        q = at(c)
+        return (q[0] - end[0]) * ux + (q[1] - end[1]) * uy > max(reach, d.via_size / 2 + 0.15)
+
+    moves = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]
+    start = (0, 0)
+    best = {(start, None): 0.0}
+    parent = {}
+    heap = [(0.0, start, None)]
+    tried = 0
+    while heap and tried < 60:
+        cost, c, md = heapq.heappop(heap)
+        if cost > best.get((c, md), 1e9):
+            continue
+        if c not in via_block and c != start and out_of_pad(c):
+            path, key = [c], (c, md)
+            while key in parent:
+                key = parent[key]
+                path.append(key[0])
+            path.reverse()
+            pts = [path[0]]
+            for a, b, e in zip(path, path[1:], path[2:], strict=False):
+                if (b[0] - a[0], b[1] - a[1]) != (e[0] - b[0], e[1] - b[1]):
+                    pts.append(b)
+            pts.append(path[-1])
+            pts = [at(q) for q in pts]
+            pts[0] = (round(centre[0], 3), round(centre[1], 3))
+            tried += 1
+            vx, vy = pts[-1]
+            if d._via_fits(vx, vy, d.via_size / 2 + HOLE_MARGIN, d.via_drill, net, boxes) and all(
+                _stub_fits(d, net, a, b, w, layer, boxes) for a, b in itertools.pairwise(pts)
+            ):
+                name = net.removeprefix("/")
+                d.track(name, pts, layer, width=w)
+                d.via(name, vx, vy)
+                k = len(pts) - 1
+                return d.segments[-k:], d.vias[-1]
+            continue
+        for mv in moves:
+            q = (c[0] + mv[0], c[1] + mv[1])
+            if abs(q[0]) > n or abs(q[1]) > n or q in track_block:
+                continue
+            if c == start and (mv[0] * ux + mv[1] * uy) <= 0:
+                continue  # leave the pad outward
+            nc = cost + math.hypot(*mv) + (0.0 if md in (None, mv) else 1.5)
+            if nc < best.get((q, mv), 1e9):
+                best[(q, mv)] = nc
+                parent[(q, mv)] = (c, md)
+                heapq.heappush(heap, (nc, q, mv))
+    return None
 
 
 def ep_vias(d: kicadgen.Design, ref: str, number: str, side: float, n: int) -> list[tuple[float, float]]:
