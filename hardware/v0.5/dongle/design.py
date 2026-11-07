@@ -1,4 +1,4 @@
-"""Agentcast dongle v0.5: our own small computer on a 72 x 26 mm stick with a male HDMI plug.
+"""Agentcast dongle v0.5: our own small computer on a 72 x 30 mm stick with a male HDMI plug.
 
 v0.1-v0.4 carried a Raspberry Pi CM5 (55 x 40 mm), which set the stick's width. The dongle does
 not need Linux: it streams the room's audio to the cloud agent, shows what the cloud renders on the
@@ -15,7 +15,7 @@ TV, and plays the agent's voice. v0.5 does that with:
 
     workcenter design design.py --route     # from this folder
 
-Board: 72 x 26 mm, 6 layers (F.Cu signal, In1.Cu GND plane, In2.Cu and In3.Cu signal, In4.Cu GND
+Board: 72 x 30 mm, 6 layers (F.Cu signal, In1.Cu GND plane, In2.Cu and In3.Cu signal, In4.Cu GND
 plane, B.Cu signal), 1.6 mm, JLCPCB's JLC06161H-2313 stackup
 (the plug clamps 1.60 mm). Two 0.6 x 0.8 mm slots in the plug end take the plug's
 shell (XUNPU drawing); the outline is drawn by StickDesign below.
@@ -45,7 +45,8 @@ HERE = Path(__file__).resolve().parent
 LIB = HERE.parent / "library"
 
 BX, BY = 100.0, 100.0  # board origin, top-left
-W, H = 72.0, 26.0  # length (x, the plug at x = W), width (y)
+W, H = 72.0, 30.0  # length (x, the plug at x = W), width (y)
+Y0 = 2.0  # the layout's frame sits Y0 below the top edge: the board grew 2 mm on each long side
 CY = BY + H / 2  # the stick's centre line
 
 PLUG_AT = (BX + W, CY)
@@ -59,7 +60,7 @@ USB_X = BX + 23.5  # body centre of both USB-C receptacles
 USB_PWR_AT = (USB_X + 2.975, BY + 6.1)  # GCT USB4085, origin at A1; turned 180: opens out of y = 0
 USB_HOST_AT = (USB_X - 2.975, BY + H - 6.1)  # opens out of y = H
 MUTE_AT = (BX + 44.0, BY + H - 2.55)
-MIC_AT = (BX + 38.0, BY + 23.0)
+MIC_AT = (BX + 38.0, BY + Y0 + 23.0)
 
 ANTENNA = [(BX, BY), (BX + 6.5, BY), (BX + 6.5, BY + H), (BX, BY + H)]
 
@@ -266,12 +267,12 @@ def route_tmds(d: kicadgen.Design) -> list[str]:
 # That U turns each pair over, so the data lanes land P/N reversed (LT_NETS); and CK, in the middle at
 # the P4 but on the right at the LT8912B, has to cross D1: it drops to In2.Cu for the last 3.5 mm.
 DSI_W, DSI_HALF = 0.14, 0.175  # 0.35 mm pitch, the P4's pin pitch: 0.21 mm gaps, about 98 ohm
-LANE_D0, LANE_CK, LANE_D1 = BY + 19.3, BY + 20.05, BY + 20.8  # under SW2 and the mic
+LANE_D0, LANE_CK, LANE_D1 = BY + Y0 + 19.3, BY + Y0 + 20.05, BY + Y0 + 20.8  # under SW2 and the mic
 JOG_D1, JOG_CK = BX + 48.7, BX + 50.0  # past SW2: D1 and CK step down to make room for CK's vias
 DOWN_CK, DOWN_D1 = 0.35, 0.8
-CK_VIAS_IN = ((BX + 53.9, LANE_CK + DOWN_CK - DSI_HALF), (BX + 54.5, BY + 20.9))  # P, N: lane to In2.Cu
-CK_VIAS_OUT = ((LT_AT[0] - 0.7, BY + 18.4), (LT_AT[0], BY + 18.95))  # P, N: In2.Cu to the pads
-V1V8_VIA = (LT_AT[0] - 1.3, BY + 19.4)  # U3 pin 5 (+1V8), boxed in between D1 and CK
+CK_VIAS_IN = ((BX + 53.9, LANE_CK + DOWN_CK - DSI_HALF), (BX + 54.5, BY + Y0 + 20.9))  # P, N: lane to In2.Cu
+CK_VIAS_OUT = ((LT_AT[0] - 0.7, BY + Y0 + 18.4), (LT_AT[0], BY + Y0 + 18.95))  # P, N: In2.Cu to the pads
+V1V8_VIA = (LT_AT[0] - 1.3, BY + Y0 + 19.4)  # U3 pin 5 (+1V8), boxed in between D1 and CK
 
 
 def route_dsi(d: kicadgen.Design) -> list[str]:
@@ -690,7 +691,7 @@ def build() -> kicadgen.Design:
     }
 
     def add(ref, sym, value, fp, at, nets, rot=0, layer="F.Cu"):
-        return d.add(ref, sym, value, fp, sch_at=(0, 0), pcb_at=(BX + at[0], BY + at[1]), pcb_rot=rot,
+        return d.add(ref, sym, value, fp, sch_at=(0, 0), pcb_at=(BX + at[0], BY + Y0 + at[1]), pcb_rot=rot,
                      pcb_layer=layer, nets=nets)  # fmt: skip
 
     R0402, C0402, C0603 = "Resistor_SMD:R_0402_1005Metric", "Capacitor_SMD:C_0402_1005Metric", "Capacitor_SMD:C_0603_1608Metric"
@@ -716,9 +717,9 @@ def build() -> kicadgen.Design:
     # ---------------------------------------------------------------- the computer
     p4 = table("esp32p4_pins.csv")
     add("U1", "Agentcast:ESP32-P4", "ESP32-P4NRW32", "Agentcast:QFN-104-1EP_10x10mm_P0.35mm_EP7.5x7.5mm",
-        (P4_AT[0] - BX, P4_AT[1] - BY), {str(k): v for k, v in P4_NETS.items() if k in p4})  # fmt: skip
+        (P4_AT[0] - BX, P4_AT[1] - BY - Y0), {str(k): v for k, v in P4_NETS.items() if k in p4})  # fmt: skip
     # Decoupling on the bottom face under U1's sides (HDG 1.3.2: 0.1 uF at each supply pin).
-    cx, cy = P4_AT[0] - BX, P4_AT[1] - BY
+    cx, cy = P4_AT[0] - BX, P4_AT[1] - BY - Y0
     for net, dx, dy, rot in (
         ("+3V3", -4.2, -2.0, 90), ("+3V3", -4.2, 2.0, 90), ("+3V3", 4.2, 2.6, 90), ("+3V3", 1.5, -4.2, 0),
         ("VDD_HP", -4.2, 3.8, 90), ("VDD_HP", 4.2, 0.6, 90), ("VDD_HP", 4.2, -1.6, 90), ("VDD_HP", -1.0, -4.2, 0),
@@ -760,7 +761,7 @@ def build() -> kicadgen.Design:
 
     # ---------------------------------------------------------------- HDMI bridge and plug
     lt = table("lt8912b_pins.csv")
-    ux, uy = LT_AT[0] - BX, LT_AT[1] - BY
+    ux, uy = LT_AT[0] - BX, LT_AT[1] - BY - Y0
     add("U3", "Agentcast:LT8912B", "LT8912B", "Agentcast:QFN-64-1EP_7.5x7.5mm_P0.4mm_EP6.2x6.2mm", (ux, uy),
         {str(k): v for k, v in LT_NETS.items() if k in lt}, rot=90)  # fmt: skip
     for dx, dy, rot in ((-3.6, -1.0, 90), (-3.6, 1.0, 90), (3.6, -2.0, 90), (3.6, 0.8, 90), (0.0, -3.6, 0), (-1.8, 3.6, 0), (1.8, 3.6, 0)):
@@ -807,7 +808,7 @@ def build() -> kicadgen.Design:
 
     # ---------------------------------------------------------------- Wi-Fi
     add("U2", "RF_Module:ESP32-C6-MINI-1", "ESP32-C6-MINI-1", "RF_Module:ESP32-C6-MINI-1",
-        (C6_AT[0] - BX, C6_AT[1] - BY), {**{str(k): v for k, v in C6_NETS.items()}, **{str(k): "GND" for k in C6_GND}},
+        (C6_AT[0] - BX, C6_AT[1] - BY - Y0), {**{str(k): v for k, v in C6_NETS.items()}, **{str(k): "GND" for k in C6_GND}},
         rot=90)  # fmt: skip
     C("10u", (13.5, 2.2), "+3V3", rot=90)
     C("100n", (15.0, 2.2), "+3V3", rot=90)
@@ -821,7 +822,7 @@ def build() -> kicadgen.Design:
         R("10k", (20.5, 7.0 + 1.6 * k), "+3V3", f"SDIO_{sig}")
 
     # ---------------------------------------------------------------- power in, USB
-    add("J4", "Connector:USB_C_Receptacle_USB2.0_16P", "USB4085-GF-A", USBC, (USB_PWR_AT[0] - BX, USB_PWR_AT[1] - BY),
+    add("J4", "Connector:USB_C_Receptacle_USB2.0_16P", "USB4085-GF-A", USBC, (USB_PWR_AT[0] - BX, USB_PWR_AT[1] - BY - Y0),
         {"A1": "GND", "B1": "GND", "A12": "GND", "B12": "GND", "SH": "GND",
          "A4": "+5V", "A9": "+5V", "B4": "+5V", "B9": "+5V", "A5": "CC1", "B5": "CC2",
          "A6": "J4_DP", "B6": "J4_DP", "A7": "J4_DN", "B7": "J4_DN"}, rot=180)  # fmt: skip
@@ -840,7 +841,7 @@ def build() -> kicadgen.Design:
     R("100k", (23.0, 16.0), "+3V3", "FB_3V3", layer="F.Cu")
     R("22.1k", (25.0, 16.0), "FB_3V3", "GND", layer="F.Cu")
     C("22u", (17.5, 13.0), "+5V", rot=90, layer="F.Cu")
-    add("J6", "Connector:USB_C_Receptacle_USB2.0_16P", "USB4085-GF-A", USBC, (USB_HOST_AT[0] - BX, USB_HOST_AT[1] - BY),
+    add("J6", "Connector:USB_C_Receptacle_USB2.0_16P", "USB4085-GF-A", USBC, (USB_HOST_AT[0] - BX, USB_HOST_AT[1] - BY - Y0),
         {"A1": "GND", "B1": "GND", "A12": "GND", "B12": "GND", "SH": "GND",
          "A4": "VBUS_HOST", "A9": "VBUS_HOST", "B4": "VBUS_HOST", "B9": "VBUS_HOST", "A5": "CC1_H", "B5": "CC2_H",
          "A6": "USB_HS_DP", "B6": "USB_HS_DP", "A7": "USB_HS_DN", "B7": "USB_HS_DN"})  # fmt: skip
@@ -854,7 +855,7 @@ def build() -> kicadgen.Design:
     R("56k", (24.7, 18.5), "VBUS_HOST", "CC2_H", rot=90)
 
     # ---------------------------------------------------------------- mic and mute
-    add("SW2", "Switch:SW_SPDT", "PCM12SMTR", "Button_Switch_SMD:SW_SPDT_PCM12", (MUTE_AT[0] - BX, MUTE_AT[1] - BY),
+    add("SW2", "Switch:SW_SPDT", "PCM12SMTR", "Button_Switch_SMD:SW_SPDT_PCM12", (MUTE_AT[0] - BX, MUTE_AT[1] - BY - Y0),
         {"2": "+3V3", "1": "MIC_3V3", "3": "MUTED"})  # fmt: skip
     R("100k", (41.0, 21.0), "MIC_3V3", "GND", rot=90)  # bleed; holds U11's enable low when muted
     R("1k", (49.8, 21.4), "MIC_3V3", "LED_LIVE_A", layer="B.Cu")
@@ -868,7 +869,7 @@ def build() -> kicadgen.Design:
     C("1u", (31.5, 21.6), "MIC_3V3", rot=90)
     C("1u", (37.0, 23.8), "MIC_1V8")
     add("MK1", "Agentcast:ICS-43434_TS", "ICS-43434", "Sensor_Audio:InvenSense_ICS-43434-6_3.5x2.65mm",
-        (MIC_AT[0] - BX, MIC_AT[1] - BY), {"1": "MIC_WS", "2": "GND", "3": "GND", "4": "MIC_BCLK", "5": "MIC_1V8", "6": "I2S_DIN"})  # fmt: skip
+        (MIC_AT[0] - BX, MIC_AT[1] - BY - Y0), {"1": "MIC_WS", "2": "GND", "3": "GND", "4": "MIC_BCLK", "5": "MIC_1V8", "6": "I2S_DIN"})  # fmt: skip
     C("100n", (40.4, 23.0), "MIC_1V8", rot=90, layer="F.Cu")
     sc70 = "Package_TO_SOT_SMD:SOT-353_SC-70-5"
     add("U13", "74xGxx:74LVC1G34", "74LVC1G34", sc70, (38.5, 18.6), {"2": "I2S_BCLK", "4": "BCLK_B", "3": "GND", "5": "MIC_1V8"}, layer="B.Cu")
@@ -906,9 +907,9 @@ def build() -> kicadgen.Design:
         d,
         fixed={"U1", "U2", "U3", "J3", "J3B", "J4", "J6", "SW2", "MK1"},
         keep={
-            "F.Cu": [(LT_AT[0] + 3.8, BY + 8.4, PLUG_AT[0] - 2.6, BY + 17.6),
-                     (P4_AT[0] - 1.8, BY + 18.25, LT_AT[0] + 0.6, BY + 21.0),  # DSI lanes
-                     (JOG_D1 - 0.4, BY + 21.0, LT_AT[0] - 1.8, BY + 21.95),
+            "F.Cu": [(LT_AT[0] + 3.8, BY + Y0 + 8.4, PLUG_AT[0] - 2.6, BY + Y0 + 17.6),
+                     (P4_AT[0] - 1.8, BY + Y0 + 18.25, LT_AT[0] + 0.6, BY + Y0 + 21.0),  # DSI lanes
+                     (JOG_D1 - 0.4, BY + Y0 + 21.0, LT_AT[0] - 1.8, BY + Y0 + 21.95),
                      (mx - 0.6, my + 0.1, mx + 0.6, my + 1.3)],
             "B.Cu": [*via_boxes, (mx - 0.6, my + 0.1, mx + 0.6, my + 1.3)],
         },
