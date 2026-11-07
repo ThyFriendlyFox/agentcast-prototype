@@ -242,7 +242,8 @@ def route_tmds(d: kicadgen.Design) -> list[str]:
         bottom = ref == "J3B"
         y0, y1 = (yp0 + yn0) / 2, (yp1 + yn1) / 2
         dy = y1 - y0
-        corners = [(xp0, y0), (x_jog, y0), (x_jog + abs(dy), y1), (x_split, y1)]
+        xj = x_jog + (0.6 if name == "D0" else 0.0)  # D0 runs on 0.6 mm: room for U3 pin 26's via above it
+        corners = [(xp0, y0), (xj, y0), (xj + abs(dy), y1), (x_split, y1)]
         centre = chamfered(corners, 0.4) if abs(dy) > 1e-6 else [(xp0, y0), (x_split, y1)]
         a, b = offset(centre, HALF), offset(centre, -HALF)
         p, n = (a, b) if abs(a[0][1] - yp0) < abs(b[0][1] - yp0) else (b, a)
@@ -494,7 +495,7 @@ def _try_spot(d: kicadgen.Design, pad, centre, spot, boxes) -> tuple | None:
 
 
 FAN_T, FAN_SPREAD, ESCAPE = (0.5, 1.3), 0.3, 0.8
-SEARCH_T = (0.45, 0.75, 1.05, 1.35, 1.65, 1.95, 2.3, 2.7, 3.1, 3.5)
+SEARCH_T = (0.45, 0.55, 0.65, 0.75, 1.05, 1.35, 1.65, 1.95, 2.3, 2.7, 3.1, 3.5)
 SEARCH_LAT = (0.0, 0.2, -0.2, 0.4, -0.4, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -1.5)
 
 
@@ -591,8 +592,8 @@ def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> tuple[int, list[str]
         _, end, (ux, uy), off = _pad_frame(pad, ox, oy)
         sign = 1.0 if off >= 0 else -1.0
         for t in SEARCH_T:
-            for lat in SEARCH_LAT:
-                lat = FAN_SPREAD * off + sign * lat
+            for lat in (None, *SEARCH_LAT):  # None: straight out, where pairs on both sides splay apart
+                lat = 0.0 if lat is None else FAN_SPREAD * off + sign * lat
                 spot = (end[0] + ux * t + uy * lat, end[1] + uy * t + ux * lat)
                 got[pad.number] = place(pad, spot)
                 if got[pad.number]:
@@ -948,12 +949,12 @@ def build() -> kicadgen.Design:
     add("SW3", "Switch:SW_Push", "RESET", "Button_Switch_SMD:SW_SPST_B3U-1000P", (cx - 9.5, 7.0), {"1": "CHIP_PU", "2": "GND"}, layer="B.Cu")
     R("10k", (cx - 6.2, cy - 8.0), "+3V3", "BOOT", rot=90)
     R("10k", (cx - 7.4, cy - 8.0), "+3V3", "GPIO36_PU", rot=90)
-    # Flash, 16 MB quad SPI, on VDDO_FLASH (3.3 V default, HDG Table 1); CS pulled up (HDG 1.3.4).
+    # Flash, 16 MB quad SPI, left of the DSI lanes (all its pins on the P4's side), on VDDO_FLASH (3.3 V default, HDG Table 1); CS pulled up (HDG 1.3.4).
     add("U4", "Memory_Flash:W25Q128JVP", "W25Q128JVPIQ", "Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm",
-        (cx - 3.6, cy + 9.0), {"1": "FLASH_CS", "2": "FLASH_Q", "3": "FLASH_WP", "4": "GND", "5": "FLASH_D",
+        (cx - 5.6, cy + 9.0), {"1": "FLASH_CS", "2": "FLASH_Q", "3": "FLASH_WP", "4": "GND", "5": "FLASH_D",
                                "6": "FLASH_CK", "7": "FLASH_HOLD", "8": "VDDO_FLASH", "9": "GND"}, layer="B.Cu")  # fmt: skip
-    R("10k", (cx - 7.6, cy + 8.0), "VDDO_FLASH", "FLASH_CS", rot=90)
-    C("100n", (cx + 0.6, cy + 9.0), "VDDO_FLASH", rot=90)
+    R("10k", (cx - 9.4, cy + 7.2), "VDDO_FLASH", "FLASH_CS", rot=90)
+    C("100n", (cx - 1.4, cy + 9.0), "VDDO_FLASH", rot=90)
 
     # ---------------------------------------------------------------- HDMI bridge and plug
     lt = table("lt8912b_pins.csv")
