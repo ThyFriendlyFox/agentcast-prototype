@@ -405,6 +405,93 @@ def stitch_grounds(d: kicadgen.Design, gaps: tuple[float, ...] = (0.1, 0.25, 0.4
     return placed
 
 
+def _seg_point_dist(a: tuple, b: tuple, q: tuple) -> float:
+    ax, ay = a
+    dx, dy = b[0] - ax, b[1] - ay
+    ll = dx * dx + dy * dy
+    t = 0.0 if ll == 0 else max(0.0, min(1.0, ((q[0] - ax) * dx + (q[1] - ay) * dy) / ll))
+    return math.dist((ax + t * dx, ay + t * dy), q)
+
+
+def _seg_box_dist(a: tuple, b: tuple, box: tuple) -> float:
+    """Distance from segment ab to an axis-aligned box (0 when they touch), by sampling the segment."""
+    x1, y1, x2, y2 = box
+    n = max(2, int(math.dist(a, b) / 0.02) + 1)
+    best = 1e9
+    for i in range(n):
+        t = i / (n - 1)
+        px, py = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+        dx, dy = max(x1 - px, 0.0, px - x2), max(y1 - py, 0.0, py - y2)
+        best = min(best, math.hypot(dx, dy))
+    return best
+
+
+def _stub_fits(d: kicadgen.Design, net: str, a: tuple, b: tuple, w: float, layer: str, boxes: list) -> bool:
+    """A track of `net` from a to b on `layer` keeps the clearance from other nets' pads, tracks, vias."""
+    need = d.clearance + 0.01 + w / 2
+    lo_x, hi_x, lo_y, hi_y = min(a[0], b[0]) - 1, max(a[0], b[0]) + 1, min(a[1], b[1]) - 1, max(a[1], b[1]) + 1
+    for bx in boxes:
+        if bx.net == net or bx.x2 < lo_x or bx.x1 > hi_x or bx.y2 < lo_y or bx.y1 > hi_y:
+            continue
+        if (bx.layer == layer or bx.kind != "smd") and _seg_box_dist(a, b, (bx.x1, bx.y1, bx.x2, bx.y2)) < need:
+            return False
+    for onet, p0, p1, ow, olayer in d.segments:
+        if onet == net or olayer != layer:
+            continue
+        if max(p0[0], p1[0]) < lo_x or min(p0[0], p1[0]) > hi_x or max(p0[1], p1[1]) < lo_y or min(p0[1], p1[1]) > hi_y:
+            continue
+        n = max(2, int(math.dist(a, b) / 0.02) + 1)
+        for i in range(n):
+            q = (a[0] + (b[0] - a[0]) * i / (n - 1), a[1] + (b[1] - a[1]) * i / (n - 1))
+            if _seg_point_dist(p0, p1, q) < need + ow / 2:
+                return False
+    for onet, (vx, vy), size, _drill in d.vias:
+        if onet != net and _seg_point_dist(a, b, (vx, vy)) < need + size / 2:
+            return False
+    return True
+
+
+def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> int:
+    """A via for each signal and supply pad of a fine-pitch part, on a short stub off the pad's outer
+    end, before routing: FreeRouting then only joins vias, which it does far better than threading
+    0.35 mm pitch pads. Each pad tries rows further out and a little to either side; the first spot
+    whose via and stub keep every clearance wins, so neighbours stagger. Returns the vias placed."""
+    r, drill = d.via_size / 2, d.via_drill
+    part = next(p for p in d.parts if p.ref == ref)
+    ox, oy = part.pcb_at
+    placed = 0
+    pads = [b for b in d.pad_boxes() if b.ref == ref and b.kind == "smd" and b.net and b.net != "GND"]
+    pads = [b for b in pads if b.net.removeprefix("/") not in skip and not b.net.startswith("unconnected")]
+    pads = [b for b in pads if (b.x2 - b.x1) < 2 and (b.y2 - b.y1) < 2]  # not the exposed pad
+    for pad in pads:
+        boxes = d.pad_boxes()
+        cx, cy = (pad.x1 + pad.x2) / 2, (pad.y1 + pad.y2) / 2
+        tall = (pad.y2 - pad.y1) > (pad.x2 - pad.x1)
+        if tall:
+            ux, uy = 0.0, (1.0 if cy > oy else -1.0)
+            end = (cx, pad.y2 if uy > 0 else pad.y1)
+        else:
+            ux, uy = (1.0 if cx > ox else -1.0), 0.0
+            end = (pad.x2 if ux > 0 else pad.x1, cy)
+        done = False
+        for t in (0.45, 0.75, 1.05, 1.35, 1.65, 1.95, 2.3, 2.7):
+            for lat in (0.0, 0.2, -0.2, 0.4, -0.4, 0.6, -0.6, 0.9, -0.9):
+                vx, vy = round(end[0] + ux * t + uy * lat, 3), round(end[1] + uy * t + ux * lat, 3)
+                if not d._via_fits(vx, vy, r + HOLE_MARGIN, drill, pad.net, boxes):
+                    continue
+                if not _stub_fits(d, pad.net, (cx, cy), (vx, vy), 0.12, pad.layer, boxes):
+                    continue
+                net = pad.net.removeprefix("/")  # pad boxes carry the board's net name
+                d.track(net, [(round(cx, 3), round(cy, 3)), (vx, vy)], pad.layer, width=0.12)
+                d.via(net, vx, vy)
+                placed += 1
+                done = True
+                break
+            if done:
+                break
+    return placed
+
+
 def ep_vias(d: kicadgen.Design, ref: str, number: str, side: float, n: int) -> list[tuple[float, float]]:
     """An n x n grid of GND vias inside an exposed pad of side `side`; returns where they are."""
     cx, cy = pad_at(d, ref, number)
@@ -777,6 +864,9 @@ def build() -> kicadgen.Design:
     d.tmds_report = route_tmds(d)
     d.dsi_report = route_dsi(d)
     tie_pad_grounds(d, {"U1": (0, 0), "U3": (0, 0), "J3": (-1, 0), "J3B": (-1, 0)})
+    dsi = {f"DSI_{n}_{s}" for n in ("D0", "D1", "CK") for s in "PN"}
+    hdmi = {f"HDMI_{n}_{s}" for n in ("D0", "D1", "D2", "CK") for s in "PN"}
+    d.fanout = {ref: fanout(d, ref, dsi | hdmi) for ref in ("U1", "U3")}
     stitch_grounds(d)
     d.model("J3", "${KIPRJMOD}/models/hdmi_a_plug.wrl", offset=(0.0, -5.65, -2.9))
 
