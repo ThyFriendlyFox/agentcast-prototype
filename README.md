@@ -8,7 +8,8 @@ The product spec is [`docs/office-agent-dongle.md`](docs/office-agent-dongle.md)
 
 | Version | State | Boards | Notes |
 |---|---|---|---|
-| [v0.4](hardware/v0.4/) | in work | the v0.3 stick with a male HDMI Type-A plug on its end: plugs straight into the TV | Gates GREEN. Plug footprint awaits the plug's drawing (4 numbers). Not yet ordered. |
+| [v0.5](hardware/v0.5/) | in work | a 72 x 26 mm stick with our own computer (ESP32-P4), LT8912B HDMI bridge, ESP32-C6 Wi-Fi, XUNPU HDMI-003 male plug, mic, mute, USB-C power and USB-C mic port | Not yet ordered: firmware and the LT8912B crystal value are open. |
+| [v0.4](hardware/v0.4/) | archived | the v0.3 stick with a male HDMI Type-A plug on its end: plugs straight into the TV | Gates GREEN. Plug footprint awaits the plug's drawing (4 numbers). Not yet ordered. |
 | [v0.3](hardware/v0.3/) | archived | one board, 67 x 46 mm stick: CM5 carrier, HDMI-A at the end, USB-C power and USB-C external mic on the sides, on-board mic, hardware mute | Gates GREEN. CM5 position checked against Raspberry Pi's 3D model. Fab files in `hardware/v0.3/dongle/fab/`. Not yet ordered. |
 | [v0.2](hardware/v0.2/) | archived | one board, 57 x 50.4 mm: CM5 carrier, HDMI-A, USB-C power, USB-C port for an external mic, on-board mic, hardware mute | Gates GREEN. Fab files in `hardware/v0.2/dongle/fab/`. Not yet ordered. |
 | [v0.1](hardware/v0.1/) | archived | main (CM5 carrier) and mic bar (4 mics) on a cable | Gates GREEN on both boards. Never ordered. |

@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "Agentcast")(type "KiCad")(uri "/home/user/agentcast-prototype/hardware/v0.5/library/agentcast.kicad_sym")(options "")(descr ""))
+)

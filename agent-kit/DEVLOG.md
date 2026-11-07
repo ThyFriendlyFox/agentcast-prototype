@@ -89,3 +89,14 @@ drawing (XUNPU HDMI-003) would not download here, so its pad size, clamp tabs,
 odd-row face and board thickness are still to confirm. Gates are GREEN.
 
 Evidence: `workcenter gates` GREEN on `hardware/v0.4/dongle`.
+
+## 2026-11-06 — v0.5: our own computer on a Chromecast-sized stick
+
+The human asked for a stick like a Roku or Chromecast, narrower than the CM5
+allows, and sent the XUNPU HDMI-003 plug drawing. The dongle does not need
+Linux: it streams audio up and shows what the cloud renders. v0.5 uses an
+ESP32-P4 with in-package PSRAM, an LT8912B DSI-to-HDMI bridge with HDMI
+audio, and an ESP32-C6 module for Wi-Fi, on a 72 x 26 mm board. The plug
+footprint now follows the manufacturer drawing: even pins on top, odd below,
+and two slots cut in the board edge. The LT8912B crystal value is not in its
+datasheet and stays open.

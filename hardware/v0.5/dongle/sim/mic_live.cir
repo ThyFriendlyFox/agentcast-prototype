@@ -1,0 +1,20 @@
+* MIC_LIVE level at the ESP32-P4's GPIO39 (bank 5, VDD_IO_5 = +3V3), at its corners.
+* Live: MIC_3V3 is +3V3 through SW2. +3V3's minimum: U9 TLV62569, VFB 0.588 V min (0.6 V -2 %),
+* 100k -1 % over 22.1k +1 %: 0.588 x (1 + 99k / 22.32k) = 3.196 V.
+* R45 10k +1 % from MIC_3V3, R46 100k -1 % pull-down, and the GPIO's 50 nA input
+* current (ESP32-P4 datasheet v0.7, Table 5-4, IIH) drawn out of the node.
+* Muted: MIC_3V3 has no source; only the pull-down holds the node, and 50 nA (IIL) flows in.
+* Limits (Table 5-4): VIH 0.75 x VDD = 2.40 V and VIL 0.25 x VDD = 0.80 V at VDD = 3.196 V.
+VDD vdd 0 DC 3.196
+R45 vdd live 10.1k
+R46 live 0 99k
+IL live 0 DC 50n
+R46M muted 0 101k
+IL2 0 muted DC 50n
+.control
+op
+let v_live = v(live)
+let v_muted = v(muted)
+print v_live v_muted
+.endc
+.end

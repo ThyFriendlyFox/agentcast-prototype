@@ -15,12 +15,12 @@ can plug into a TV and use in minutes.
 
 provisional: true (set by the agent at setup; the human re-orders)
 
-### 1. v0.4 bring-up on the bench
-- **Promise:** A CM5 on a v0.4 board boots, plugged straight into a TV,, shows a desktop on a TV over HDMI, and records from the on-board mic and from a USB mic on J6 with `arecord`.
+### 1. v0.5 bring-up on the bench
+- **Promise:** A v0.5 stick plugged into a TV boots its ESP32-P4, joins Wi-Fi through the C6, shows a test image over HDMI,, shows a desktop on a TV over HDMI, and records from the on-board mic and from a USB mic on J6 with `arecord`.
 - **Evidence:** a photo of the TV and two WAV files in `hardware/v0.3/bringup/`.
 - **Use case:** UC-1 (team room).
 - **Scope guard:** no enclosure, no cloud agent, no echo cancellation.
-- **Status:** blocked on the plug drawing and ordering v0.4 boards.
+- **Status:** blocked on firmware (ESP-IDF, ESP-Hosted, LT8912B driver) and the LT8912B crystal value.
 
 ### 2. Speaker labels from voice on the dongle's audio
 - **Promise:** A recording from the v0.2 mic of 3 people talking in turn gets 3 speaker labels from a voice-based diarizer with under 15 % diarization error.
@@ -39,7 +39,6 @@ provisional: true (set by the agent at setup; the human re-orders)
 ## Later — candidates, not yet specced
 
 - Parts under the module (taller CM5 sockets) — a smaller board.
-- A smaller computer than the CM5 — a stick about 20 mm wide, like a Roku stick.
 - Wired Ethernet on the main board — offices that block Wi-Fi devices.
 - Enclosure — the dongle hangs behind a TV; the mic needs an opening.
 

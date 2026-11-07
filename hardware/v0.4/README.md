@@ -1,6 +1,7 @@
 # Agentcast dongle v0.4
 
-> **In work.** Made from [v0.3](../v0.3/) (commit `f83c855`). v0.4 replaces the
+> **Archived** at commit `223e73b`. Superseded by [v0.5](../v0.5/) (own computer, 68 x 26 mm).
+> Made from [v0.3](../v0.3/) (commit `f83c855`). v0.4 replaces the
 > HDMI receptacle with a male HDMI Type-A plug: the stick goes straight into the TV.
 
 One board, 67 x 46 mm, 4 layers. A Raspberry Pi Compute Module 5 sits on top.
