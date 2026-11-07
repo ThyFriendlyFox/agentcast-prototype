@@ -1,4 +1,4 @@
-"""Agentcast dongle v0.5: our own small computer on a 72 x 30 mm stick with a male HDMI plug.
+"""Agentcast dongle v0.5: our own small computer on an 80 x 30 mm stick with a male HDMI plug.
 
 v0.1-v0.4 carried a Raspberry Pi CM5 (55 x 40 mm), which set the stick's width. The dongle does
 not need Linux: it streams the room's audio to the cloud agent, shows what the cloud renders on the
@@ -15,7 +15,7 @@ TV, and plays the agent's voice. v0.5 does that with:
 
     workcenter design design.py --route     # from this folder
 
-Board: 72 x 30 mm, 8 layers (F.Cu signal, In1.Cu GND plane, In2.Cu to In5.Cu signal, In6.Cu GND
+Board: 80 x 30 mm, 8 layers (F.Cu signal, In1.Cu GND plane, In2.Cu to In5.Cu signal, In6.Cu GND
 plane, B.Cu signal), 1.6 mm, JLCPCB's JLC081611-2116 stackup
 (the plug clamps 1.60 mm). Two 0.6 x 0.8 mm slots in the plug end take the plug's
 shell (XUNPU drawing); the outline is drawn by StickDesign below.
@@ -46,7 +46,7 @@ HERE = Path(__file__).resolve().parent
 LIB = HERE.parent / "library"
 
 BX, BY = 100.0, 100.0  # board origin, top-left
-W, H = 72.0, 30.0  # length (x, the plug at x = W), width (y)
+W, H = 80.0, 30.0  # length (x, the plug at x = W), width (y)
 Y0 = 2.0  # the layout's frame sits Y0 below the top edge: the board grew 2 mm on each long side
 CY = BY + H / 2  # the stick's centre line
 
@@ -55,13 +55,13 @@ SLOT_X = 6.80  # the plug's shell slots, either side of the centre line (XUNPU d
 SLOT_W, SLOT_D = 0.60, 0.80
 
 C6_AT = (BX + 11.5, CY)  # module turned 90 degrees: its antenna end over x 100.5..106
-P4_AT = (BX + 36.0, CY)
-LT_AT = (BX + 57.5, CY)
+P4_AT = (BX + 44.0, CY)  # 8 mm right of v0.5's first layout: the mic moved to the P4's left
+LT_AT = (BX + 65.5, CY)
 USB_X = BX + 23.5  # body centre of both USB-C receptacles
 USB_PWR_AT = (USB_X + 2.975, BY + 6.1)  # GCT USB4085, origin at A1; turned 180: opens out of y = 0
 USB_HOST_AT = (USB_X - 2.975, BY + H - 6.1)  # opens out of y = H
-MUTE_AT = (BX + 44.0, BY + H - 2.55)
-MIC_AT = (BX + 38.0, BY + Y0 + 23.0)
+MUTE_AT = (BX + 52.0, BY + H - 2.55)
+MIC_AT = (BX + 33.0, BY + Y0 + 23.5)
 
 ANTENNA = [(BX, BY), (BX + 6.5, BY), (BX + 6.5, BY + H), (BX, BY + H)]
 
@@ -269,9 +269,9 @@ def route_tmds(d: kicadgen.Design) -> list[str]:
 # the P4 but on the right at the LT8912B, has to cross D1: it drops to In2.Cu for the last 3.5 mm.
 DSI_W, DSI_HALF = 0.14, 0.175  # 0.35 mm pitch, the P4's pin pitch: 0.21 mm gaps, about 98 ohm
 LANE_D0, LANE_CK, LANE_D1 = BY + Y0 + 19.3, BY + Y0 + 20.05, BY + Y0 + 20.8  # under SW2 and the mic
-JOG_D1, JOG_CK = BX + 48.7, BX + 50.0  # past SW2: D1 and CK step down to make room for CK's vias
+JOG_D1, JOG_CK = BX + 56.7, BX + 58.0  # past SW2: D1 and CK step down to make room for CK's vias
 DOWN_CK, DOWN_D1 = 0.35, 0.8
-CK_VIAS_IN = ((BX + 53.9, LANE_CK + DOWN_CK - DSI_HALF), (BX + 54.5, BY + Y0 + 20.9))  # P, N: lane to In2.Cu
+CK_VIAS_IN = ((BX + 61.9, LANE_CK + DOWN_CK - DSI_HALF), (BX + 62.5, BY + Y0 + 20.9))  # P, N: lane to In2.Cu
 CK_VIAS_OUT = ((LT_AT[0] - 0.7, BY + Y0 + 18.4), (LT_AT[0], BY + Y0 + 18.95))  # P, N: In2.Cu to the pads
 V1V8_VIA = (LT_AT[0] - 1.3, BY + Y0 + 19.4)  # U3 pin 5 (+1V8), boxed in between D1 and CK
 
@@ -889,12 +889,12 @@ def build() -> kicadgen.Design:
         ("+1V8", 0.5, -4.2, 0), ("VDDO_FLASH", -2.4, 4.2, 0), ("VDDO_PSRAM", 3.0, 4.2, 0), ("VDD_MIPI", -0.5, 4.2, 0),
     ):  # fmt: skip
         C("100n", (cx + dx, cy + dy), net, rot=rot)
-    C("10u", (cx + 6.4, cy - 3.0), "+3V3", rot=90)
-    C("22u", (cx + 6.4, cy + 1.0), "VDD_HP", rot=90)
-    C("1u", (cx + 6.4, cy + 4.0), "VDDO_FLASH", rot=90)
+    C("10u", (cx + 7.4, cy - 3.0), "+3V3", rot=90)
+    C("22u", (cx + 7.4, cy + 1.0), "VDD_HP", rot=90)
+    C("1u", (cx + 7.4, cy + 4.0), "VDDO_FLASH", rot=90)
     C("1u", (cx + 1.5, cy + 6.3), "VDDO_PSRAM")
     C("1u", (cx - 1.5, cy + 6.3), "VDD_MIPI")
-    C("1u", (cx + 4.0, cy - 6.3), "VDDO_4")
+    C("1u", (cx + 4.0, cy - 7.2), "VDDO_4")
     R("4.02k", (cx - 3.6, cy + 6.3), "DSI_REXT", "GND")  # DSI PHY reference (datasheet pin 34)
     # Core supply: TLV62569 per HDG Fig. 5 (chip revision v3.0 and later).
     add("U5", "Regulator_Switching:TLV62569DBV", "TLV62569DBV", SOT235, (cx + 8.0, 3.2),
@@ -954,20 +954,20 @@ def build() -> kicadgen.Design:
         d.add(ref, f"Agentcast:{sym}", "HDMI-003" if ref == "J3" else "HDMI-003 (bottom contacts)", f"Agentcast:{fp}",
               sch_at=(0, 0), pcb_at=PLUG_AT, pcb_rot=90 if layer == "F.Cu" else 270, pcb_layer=layer, nets=nets)  # fmt: skip
     # HDMI +5V (pin 18): TPS2051C, current limit and reverse blocking; EN from +3V3.
-    add("U7", "Power_Management:TPS2051CDBV", "TPS2051CDBV", SOT235, (64.0, 22.0),
+    add("U7", "Power_Management:TPS2051CDBV", "TPS2051CDBV", SOT235, (72.0, 22.0),
         {"5": "+5V", "4": "+3V3", "1": "+5VP", "2": "GND"}, layer="B.Cu")  # fmt: skip
-    C("100n", (64.0, 24.6), "+5VP")
+    C("100n", (72.0, 24.6), "+5VP")
     # HPD (5 V from the TV) into the LT8912B's 1.8 V-referenced input: 18k / 10k (+100k inside).
-    R("18k", (64.5, 19.0), "HDMI_HPD", "LT_HPD", rot=90)
-    R("10k", (65.7, 19.0), "LT_HPD", "GND", rot=90)
+    R("18k", (72.5, 19.0), "HDMI_HPD", "LT_HPD", rot=90)
+    R("10k", (73.7, 19.0), "LT_HPD", "GND", rot=90)
     # DDC (EDID) at 5 V to the P4's 3.3 V I2C through BSS138 shifters; source pull-ups 1.8k to +5VP.
     for k, (line, gpio) in enumerate((("DDC_SDA", "DDC_SDA_3V3"), ("DDC_SCL", "DDC_SCL_3V3"))):
-        add(f"Q{k + 1}", "Transistor_FET:BSS138", "BSS138", SOT23, (63.5 - 3.0 * k, 4.5),
+        add(f"Q{k + 1}", "Transistor_FET:BSS138", "BSS138", SOT23, (71.5 - 3.0 * k, 4.5),
             {"1": "+3V3", "2": gpio, "3": line}, rot=90, layer="B.Cu")  # fmt: skip
-        R("1.8k", (63.5 - 3.0 * k, 7.6), "+5VP", line, rot=90)
-        R("4.7k", (63.5 - 3.0 * k, 1.8), "+3V3", gpio, rot=90)
+        R("1.8k", (71.5 - 3.0 * k, 7.6), "+5VP", line, rot=90)
+        R("4.7k", (71.5 - 3.0 * k, 1.8), "+3V3", gpio, rot=90)
     # CEC: 3.3 V open drain straight to the plug (HDMI CEC is 3.3 V); 27k pull-up.
-    R("27k", (58.5, 1.8), "+3V3", "HDMI_CEC", rot=90)
+    R("27k", (66.5, 1.8), "+3V3", "HDMI_CEC", rot=90)
 
     # ---------------------------------------------------------------- Wi-Fi
     add("U2", "RF_Module:ESP32-C6-MINI-1", "ESP32-C6-MINI-1", "RF_Module:ESP32-C6-MINI-1",
@@ -1020,33 +1020,33 @@ def build() -> kicadgen.Design:
     # ---------------------------------------------------------------- mic and mute
     add("SW2", "Switch:SW_SPDT", "PCM12SMTR", "Button_Switch_SMD:SW_SPDT_PCM12", (MUTE_AT[0] - BX, MUTE_AT[1] - BY - Y0),
         {"2": "+3V3", "1": "MIC_3V3", "3": "MUTED"})  # fmt: skip
-    R("100k", (41.0, 21.0), "MIC_3V3", "GND", rot=90)  # bleed; holds U11's enable low when muted
-    R("1k", (49.8, 21.4), "MIC_3V3", "LED_LIVE_A", layer="B.Cu")
-    add("D1", "Device:LED", "green LIVE", LED0603, (49.8, 23.0), {"2": "LED_LIVE_A", "1": "GND"}, rot=180)
-    R("1k", (49.8, 24.6), "MUTED", "LED_MUTED_A", layer="B.Cu")
-    add("D2", "Device:LED", "red MUTED", LED0603, (52.2, 23.6), {"2": "LED_MUTED_A", "1": "GND"}, rot=90)
-    R("10k", (42.2, 21.0), "MIC_3V3", "MIC_LIVE", rot=90)
-    R("100k", (43.4, 21.0), "MIC_LIVE", "GND", rot=90)
-    add("U12", "Regulator_Linear:AP2112K-1.8", "AP2112K-1.8", SOT235, (34.5, 21.6),
+    R("100k", (49.0, 21.0), "MIC_3V3", "GND", rot=90)  # bleed; holds U11's enable low when muted
+    R("1k", (57.8, 21.4), "MIC_3V3", "LED_LIVE_A", layer="B.Cu")
+    add("D1", "Device:LED", "green LIVE", LED0603, (57.8, 23.0), {"2": "LED_LIVE_A", "1": "GND"}, rot=180)
+    R("1k", (57.8, 24.6), "MUTED", "LED_MUTED_A", layer="B.Cu")
+    add("D2", "Device:LED", "red MUTED", LED0603, (60.2, 23.6), {"2": "LED_MUTED_A", "1": "GND"}, rot=90)
+    R("10k", (50.2, 21.0), "MIC_3V3", "MIC_LIVE", rot=90)
+    R("100k", (51.4, 21.0), "MIC_LIVE", "GND", rot=90)
+    add("U12", "Regulator_Linear:AP2112K-1.8", "AP2112K-1.8", SOT235, (33.0, 20.2),
         {"1": "MIC_3V3", "3": "MIC_3V3", "2": "GND", "5": "MIC_1V8"}, layer="B.Cu")  # fmt: skip
-    C("1u", (31.5, 21.6), "MIC_3V3", rot=90)
-    C("1u", (37.0, 23.8), "MIC_1V8")
+    C("1u", (30.4, 20.2), "MIC_3V3", rot=90)
+    C("1u", (35.8, 21.4), "MIC_1V8", rot=90)
     add("MK1", "Agentcast:ICS-43434_TS", "ICS-43434", "Sensor_Audio:InvenSense_ICS-43434-6_3.5x2.65mm",
         (MIC_AT[0] - BX, MIC_AT[1] - BY - Y0), {"1": "MIC_WS", "2": "GND", "3": "GND", "4": "MIC_BCLK", "5": "MIC_1V8", "6": "I2S_DIN"})  # fmt: skip
-    C("100n", (40.4, 23.0), "MIC_1V8", rot=90, layer="F.Cu")
+    C("100n", (35.6, 23.5), "MIC_1V8", rot=90, layer="F.Cu")
     sc70 = "Package_TO_SOT_SMD:SOT-353_SC-70-5"
-    add("U13", "74xGxx:74LVC1G34", "74LVC1G34", sc70, (38.5, 18.6), {"2": "I2S_BCLK", "4": "BCLK_B", "3": "GND", "5": "MIC_1V8"}, layer="B.Cu")
-    add("U14", "74xGxx:74LVC1G34", "74LVC1G34", sc70, (42.0, 18.6), {"2": "I2S_WS", "4": "WS_B", "3": "GND", "5": "MIC_1V8"}, layer="B.Cu")
-    R("33", (38.5, 16.4), "BCLK_B", "MIC_BCLK")
-    R("33", (42.0, 16.4), "WS_B", "MIC_WS")
-    C("100n", (40.25, 16.4), "MIC_1V8", rot=90)
-    R("100k", (36.0, 18.6), "I2S_DIN", "GND", rot=90)  # tri-stated SD line (ICS-43434 datasheet)
+    add("U13", "74xGxx:74LVC1G34", "74LVC1G34", sc70, (32.0, 11.0), {"2": "I2S_BCLK", "4": "BCLK_B", "3": "GND", "5": "MIC_1V8"}, layer="B.Cu")
+    add("U14", "74xGxx:74LVC1G34", "74LVC1G34", sc70, (35.0, 11.0), {"2": "I2S_WS", "4": "WS_B", "3": "GND", "5": "MIC_1V8"}, layer="B.Cu")
+    R("33", (32.0, 13.4), "BCLK_B", "MIC_BCLK", rot=90)
+    R("33", (35.0, 13.4), "WS_B", "MIC_WS", rot=90)
+    C("100n", (33.5, 13.4), "MIC_1V8", rot=90)
+    R("100k", (30.4, 11.0), "I2S_DIN", "GND", rot=90)  # tri-stated SD line (ICS-43434 datasheet)
 
     # ---------------------------------------------------------------- LEDs
     R("2.2k", (30.5, 2.0), "+5V", "LED_PWR_A", layer="F.Cu")
     add("D3", "Device:LED", "green PWR", LED0603, (30.5, 3.6), {"2": "LED_PWR_A", "1": "GND"}, rot=180)
-    R("330", (52.0, 21.0), "STATE_LED", "LED_STATE_A", layer="B.Cu")
-    add("D4", "Device:LED", "amber STATE", LED0603, (54.4, 23.6), {"2": "LED_STATE_A", "1": "GND"}, rot=90)
+    R("330", (60.0, 21.0), "STATE_LED", "LED_STATE_A", layer="B.Cu")
+    add("D4", "Device:LED", "amber STATE", LED0603, (62.4, 23.6), {"2": "LED_STATE_A", "1": "GND"}, rot=90)
 
     for part in d.parts:  # references on the fab layer only for the small parts (README)
         if part.ref[0] in "RCDLQY" or part.ref.startswith(("SW", "U5", "U6", "U7", "U8", "U9", "U1", "J4", "J6")):
@@ -1095,6 +1095,6 @@ def build() -> kicadgen.Design:
     stitch_grounds(d)
     d.model("J3", "${KIPRJMOD}/models/hdmi_a_plug.wrl", offset=(0.0, -5.65, -2.9))
 
-    d.text("AGENTCAST v0.5", BX + 46.0, BY + 1.6, "B.SilkS", 1.0, 0.15)
+    d.text("AGENTCAST v0.5", BX + 54.0, BY + 1.6, "B.SilkS", 1.0, 0.15)
     d.text("MUTE", MUTE_AT[0], BY + H - 6.4, "F.SilkS", 0.8, 0.12)
     return d
