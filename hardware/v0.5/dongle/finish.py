@@ -22,6 +22,7 @@ import heapq
 import itertools
 import json
 import math
+import os
 import re
 import sys
 from pathlib import Path
@@ -437,8 +438,12 @@ def write_back(g: Grid) -> None:
     b = g.board
     for t in list(b.GetTracks()):
         b.Remove(t)
+    placed: list = []
     for net, _name, layer, a, c, r, drill in g.copper:
         if layer is None:
+            if any(n == net and math.dist(a, q) < 2 * r for n, q in placed):
+                continue  # a via of the same net already covers this spot: one hole, not two
+            placed.append((net, a))
             v = pcbnew.PCB_VIA(b)
             v.SetPosition(pcbnew.VECTOR2I(pcbnew.FromMM(a[0]), pcbnew.FromMM(a[1])))
             v.SetViaType(pcbnew.VIATYPE_THROUGH)
@@ -616,10 +621,11 @@ def connect_free(g: Grid, net: int) -> bool:
     return True
 
 
-CAREFUL_TRIES = 8
+CAREFUL_TRIES = int(os.environ.get("CAREFUL_TRIES", "8"))
+CAREFUL_DEPTH = int(os.environ.get("CAREFUL_DEPTH", "1"))
 
 
-def careful_connect(g: Grid, net: int, names: dict, price: dict) -> bool:
+def careful_connect(g: Grid, net: int, names: dict, price: dict, depth: int = CAREFUL_DEPTH) -> bool:
     """Join the net; where it must cross another net's copper, keep the crossing only if every net
     it displaces then rejoins through free cells. A failed try is undone in full, and the nets it
     displaced cost more next try, so the board never ends worse than it started."""
@@ -638,7 +644,10 @@ def careful_connect(g: Grid, net: int, names: dict, price: dict) -> bool:
         ripped = rip(g, net, tracks, vias)
         draw(g, net, tracks, vias)
         g.rebuild()
-        if connect_free(g, net) and all(connect_free(g, o) for o in sorted(ripped)):
+        def rejoin(o: int) -> bool:  # through free cells, or (depth left) a careful crossing of its own
+            return connect_free(g, o) or (depth > 0 and careful_connect(g, o, names, dict(price), depth - 1))
+
+        if connect_free(g, net) and all(rejoin(o) for o in sorted(ripped)):
             print(f"  routed {names.get(net, net)}, rerouting {sorted(names.get(o, o) for o in ripped)}")
             return True
         g.copper = [list(c) for c in snap]
