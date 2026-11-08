@@ -951,10 +951,10 @@ def build() -> kicadgen.Design:
     add("SW3", "Switch:SW_Push", "RESET", "Button_Switch_SMD:SW_SPST_B3U-1000P", (cx - 9.5, 7.0), {"1": "CHIP_PU", "2": "GND"}, layer="B.Cu")
     R("10k", (cx - 6.2, cy - 8.0), "+3V3", "BOOT", rot=90)
     R("10k", (cx - 7.4, cy - 8.0), "+3V3", "GPIO36_PU", rot=90)
-    # Flash, 16 MB quad SPI, left of the DSI lanes (all its pins on the P4's side), on VDDO_FLASH (3.3 V default, HDG Table 1); CS pulled up (HDG 1.3.4).
+    # Flash, 16 MB quad SPI, left of the DSI lanes, turned so both pin rows run in the P4's pin order; on VDDO_FLASH (3.3 V default, HDG Table 1); CS pulled up (HDG 1.3.4).
     add("U4", "Memory_Flash:W25Q128JVP", "W25Q128JVPIQ", "Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm",
         (cx - 5.6, cy + 9.0), {"1": "FLASH_CS", "2": "FLASH_Q", "3": "FLASH_WP", "4": "GND", "5": "FLASH_D",
-                               "6": "FLASH_CK", "7": "FLASH_HOLD", "8": "VDDO_FLASH", "9": "GND"}, layer="B.Cu")  # fmt: skip
+                               "6": "FLASH_CK", "7": "FLASH_HOLD", "8": "VDDO_FLASH", "9": "GND"}, rot=270, layer="B.Cu")  # fmt: skip
     R("10k", (cx - 9.4, cy + 7.2), "VDDO_FLASH", "FLASH_CS", rot=90)
     C("100n", (cx - 1.4, cy + 9.0), "VDDO_FLASH", rot=90)
 

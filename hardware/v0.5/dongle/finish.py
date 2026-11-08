@@ -32,7 +32,7 @@ import pcbnew
 GRID = 0.025
 WIDTH = 0.12  # the board's track width (design.py track_width)
 HOLE_MARGIN = 0.02  # as design.py: the router does not model the 0.25 mm hole clearance
-SLACK = 0.02  # a cell centre stands up to GRID / sqrt(2) from the copper it stands for
+SLACK = 0.03  # a cell centre stands up to GRID / sqrt(2) from the copper it stands for
 VIA_COST = 40  # in cells: a via weighs a millimetre of track
 RIP_COST, RIP_GROWTH = 20.0, 2.0  # per cell of another net's copper crossed, times (1 + growth * rips)
 GREED = 1.5  # weighted A*: faster, a little longer than shortest
