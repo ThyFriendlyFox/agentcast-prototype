@@ -553,6 +553,7 @@ def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> tuple[int, list[str]
     ox, oy = part.pcb_at
     pads = [b for b in d.pad_boxes() if b.ref == ref and b.kind == "smd" and b.net and b.net != "GND"]
     pads = [b for b in pads if b.net.removeprefix("/") not in skip and not b.net.startswith("unconnected")]
+    pads = [b for b in pads if f"{ref}.{b.number}" not in skip]  # single pins, by reference
     pads = [b for b in pads if (b.x2 - b.x1) < 2 and (b.y2 - b.y1) < 2]  # not the exposed pad
     got = {b.number: None for b in pads}
     boxes = d.pad_boxes()
@@ -776,6 +777,24 @@ def preroute(d: kicadgen.Design) -> None:
             d.track(c["net"], [tuple(c["a"]), tuple(c["b"])], c["layer"], width=0.12)
 
 
+FLASH_ROWS = (("30", "8", "VDDO_FLASH"), ("31", "7", "FLASH_HOLD"), ("32", "6", "FLASH_CK"), ("33", "5", "FLASH_D"))
+FLASH_LANE0, FLASH_PITCH = 0.9, 0.28  # the first lane below the P4's pad ends (vias for 27-29 above it)
+
+
+def route_flash(d: kicadgen.Design) -> list[str]:
+    """The P4's pins 30-33 to the flash's near row (VCC, HOLD, CK, D), drawn by hand on F.Cu: each
+    drops from its pin to a lane of its own, runs left and drops onto the flash pin. The leftmost
+    takes the highest lane, so none cross; above the lanes, pins 27-29 take their vias."""
+    report = []
+    for k, (pin, fpin, net) in enumerate(FLASH_ROWS):
+        (px, py), (fx, fy) = pad_at(d, "U1", pin), pad_at(d, "U4", fpin)
+        lane = round(py + 0.3 + FLASH_LANE0 + k * FLASH_PITCH, 3)
+        pts = [(px, py), (px, lane), (fx, lane), (fx, fy)]
+        d.track(net, [(round(x, 3), round(y, 3)) for x, y in pts], "F.Cu", width=0.12)
+        report.append(f"{net}: {seg_len(pts):.2f} mm")
+    return report
+
+
 def ep_vias(d: kicadgen.Design, ref: str, number: str, side: float, n: int) -> list[tuple[float, float]]:
     """An n x n grid of GND vias inside an exposed pad of side `side`; returns where they are."""
     cx, cy = pad_at(d, ref, number)
@@ -946,11 +965,11 @@ def build() -> kicadgen.Design:
     add("U1", "Agentcast:ESP32-P4", "ESP32-P4NRW32", "Agentcast:QFN-104-1EP_10x10mm_P0.35mm_EP7.5x7.5mm",
         (P4_AT[0] - BX, P4_AT[1] - BY - Y0), {str(k): v for k, v in P4_NETS.items() if k in p4})  # fmt: skip
     # Decoupling on the bottom face under U1's sides (HDG 1.3.2: 0.1 uF at each supply pin), clear of
-    # the pins boxed in outside (flash 31-33, 51, 72): their vias go in between the pad ring and the exposed pad.
+    # the pins boxed in outside (flash 27-29, 51, 72): their vias go in between the pad ring and the exposed pad.
     cx, cy = P4_AT[0] - BX, P4_AT[1] - BY - Y0
     for net, dx, dy, rot in (
-        ("+3V3", -4.2, -2.0, 90), ("+3V3", -4.2, 2.0, 90), ("+3V3", 4.2, 2.6, 90), ("+3V3", 1.5, -4.2, 0),
-        ("VDD_HP", -4.2, 3.8, 90), ("VDD_HP", 4.2, 0.6, 90), ("VDD_HP", 4.2, -1.1, 90), ("VDD_HP", -1.0, -4.2, 0),
+        ("+3V3", -4.2, -2.0, 90), ("+3V3", -4.2, 1.5, 90), ("+3V3", 4.2, 2.6, 90), ("+3V3", 1.5, -4.2, 0),
+        ("VDD_HP", -4.2, -0.25, 90), ("VDD_HP", 4.2, 0.6, 90), ("VDD_HP", 4.2, -1.1, 90), ("VDD_HP", -1.0, -4.2, 0),
         ("+1V8", 0.5, -4.2, 0), ("VDDO_FLASH", -0.85, 4.2, 0), ("VDDO_PSRAM", 2.3, 4.2, 0), ("VDD_MIPI", 0.6, 4.2, 0),
     ):  # fmt: skip
         C("100n", (cx + dx, cy + dy), net, rot=rot)
@@ -983,7 +1002,7 @@ def build() -> kicadgen.Design:
     # Flash, 16 MB quad SPI, on the top face under the P4's flash pins, turned so its near row runs in
     # their order (VCC, HOLD, CK, D): the bus stays on F.Cu, no vias in the P4's busiest corner. On VDDO_FLASH (3.3 V default, HDG Table 1); CS pulled up (HDG 1.3.4).
     add("U4", "Memory_Flash:W25Q128JVP", "W25Q128JVPIQ", "Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm",
-        (cx - 5.6, cy + 9.0), {"1": "FLASH_CS", "2": "FLASH_Q", "3": "FLASH_WP", "4": "GND", "5": "FLASH_D",
+        (cx - 5.6, cy + 10.3), {"1": "FLASH_CS", "2": "FLASH_Q", "3": "FLASH_WP", "4": "GND", "5": "FLASH_D",
                                "6": "FLASH_CK", "7": "FLASH_HOLD", "8": "VDDO_FLASH", "9": "GND"}, rot=90, layer="F.Cu")  # fmt: skip
     R("10k", (cx - 9.4, cy + 7.2), "VDDO_FLASH", "FLASH_CS", rot=90)
     C("100n", (cx - 1.4, cy + 9.0), "VDDO_FLASH", rot=90)
@@ -1157,7 +1176,8 @@ def build() -> kicadgen.Design:
     tie_pad_grounds(d, {"U1": (0, 0), "U3": (0, 0), "J3": (-1, 0), "J3B": (-1, 0)})
     dsi = {f"DSI_{n}_{s}" for n in ("D0", "D1", "CK") for s in "PN"}
     hdmi = {f"HDMI_{n}_{s}" for n in ("D0", "D1", "D2", "CK") for s in "PN"}
-    flash = {f"FLASH_{s}" for s in ("CS", "Q", "WP", "HOLD", "CK", "D")}  # on F.Cu straight to U4
+    d.flash_report = route_flash(d)
+    flash = {"FLASH_HOLD", "FLASH_CK", "FLASH_D", "U1.30"}  # drawn by route_flash; CS, Q, WP take vias
     d.fanout = {ref: fanout(d, ref, dsi | hdmi | flash) for ref in ("U1", "U3")}
     preroute(d)
     stitch_grounds(d)
