@@ -502,6 +502,7 @@ SEARCH_LAT = (0.0, 0.2, -0.2, 0.4, -0.4, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -
 
 
 FAN_MAZE = True
+INWARD_T = (0.4, 0.45, 0.5, 0.55)  # a via this far in from a pad's inner end, short of the exposed pad
 FAN_PITCH, FAN_REACH = 0.6, 0.6  # the fan's via pitch, and how far past the pad end its middle via stands
 
 
@@ -565,8 +566,10 @@ def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> tuple[int, list[str]
 
     def place(pad, spot) -> tuple | None:
         """_try_spot, kept only if every pad still without a via keeps its lane."""
+        waiting = [b for b in pads if got[b.number] is None and b is not pad and b.number in open_lane]
+        free = [b for b in waiting if lane_free(b)]  # a lane already closed is not this via's doing
         added = _try_spot(d, pad, _pad_frame(pad, ox, oy)[0], spot, boxes)
-        if added and not all(lane_free(b) for b in pads if got[b.number] is None and b is not pad and b.number in open_lane):
+        if added and not all(lane_free(b) for b in free):
             d.segments.remove(added[0])
             d.vias.remove(added[1])
             return None
@@ -605,6 +608,31 @@ def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> tuple[int, list[str]
     for pad in sorted(pads, key=lambda b: abs(_pad_frame(b, ox, oy)[3]), reverse=True):  # corners first
         if got[pad.number] is None:
             got[pad.number] = _maze_escape(d, pad, ox, oy, boxes)
+    for pad in pads:  # boxed in outside: a via inward, between the pad row and the exposed pad
+        if got[pad.number] is not None:
+            continue
+        (cx, cy), _end, (ux, uy), _ = _pad_frame(pad, ox, oy)
+        half = max(pad.x2 - pad.x1, pad.y2 - pad.y1) / 2
+        inner = (cx - ux * half, cy - uy * half)
+        for t in INWARD_T:
+            for lat in (0.0, 0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, -0.4, 0.5, -0.5, 0.6, -0.6):
+                spot = (inner[0] - ux * t + uy * lat, inner[1] - uy * t + ux * lat)
+                got[pad.number] = place(pad, spot)
+                if got[pad.number]:
+                    break
+            if got[pad.number]:
+                break
+    for pad in pads:  # a via of its own net already within reach: a stub to it
+        if got[pad.number] is not None:
+            continue
+        centre = _pad_frame(pad, ox, oy)[0]
+        for _net, at, _size, _drill in sorted(d.vias, key=lambda v: math.dist(v[1], centre)):
+            if _net != pad.net or math.dist(at, centre) > 0.9:
+                continue
+            if _stub_fits(d, pad.net, centre, at, 0.12, pad.layer, boxes):
+                d.track(pad.net.removeprefix("/"), [(round(centre[0], 3), round(centre[1], 3)), at], pad.layer, width=0.12)
+                got[pad.number] = (d.segments[-1], None)
+                break
     left = sorted((n for n, g in got.items() if g is None), key=int)
     nets = {b.number: b.net + ("" if lane_free(b) else " (boxed in)" if b.number in open_lane else " (no lane)") for b in pads}
     return sum(g is not None for g in got.values()), [f"{ref}.{n} {nets[n]}" for n in left]
@@ -917,12 +945,13 @@ def build() -> kicadgen.Design:
     p4 = table("esp32p4_pins.csv")
     add("U1", "Agentcast:ESP32-P4", "ESP32-P4NRW32", "Agentcast:QFN-104-1EP_10x10mm_P0.35mm_EP7.5x7.5mm",
         (P4_AT[0] - BX, P4_AT[1] - BY - Y0), {str(k): v for k, v in P4_NETS.items() if k in p4})  # fmt: skip
-    # Decoupling on the bottom face under U1's sides (HDG 1.3.2: 0.1 uF at each supply pin).
+    # Decoupling on the bottom face under U1's sides (HDG 1.3.2: 0.1 uF at each supply pin), clear of
+    # the pins boxed in outside (flash 31-33, 51, 72): their vias go in between the pad ring and the exposed pad.
     cx, cy = P4_AT[0] - BX, P4_AT[1] - BY - Y0
     for net, dx, dy, rot in (
         ("+3V3", -4.2, -2.0, 90), ("+3V3", -4.2, 2.0, 90), ("+3V3", 4.2, 2.6, 90), ("+3V3", 1.5, -4.2, 0),
-        ("VDD_HP", -4.2, 3.8, 90), ("VDD_HP", 4.2, 0.6, 90), ("VDD_HP", 4.2, -1.6, 90), ("VDD_HP", -1.0, -4.2, 0),
-        ("+1V8", 0.5, -4.2, 0), ("VDDO_FLASH", -2.4, 4.2, 0), ("VDDO_PSRAM", 3.0, 4.2, 0), ("VDD_MIPI", -0.5, 4.2, 0),
+        ("VDD_HP", -4.2, 3.8, 90), ("VDD_HP", 4.2, 0.6, 90), ("VDD_HP", 4.2, -1.1, 90), ("VDD_HP", -1.0, -4.2, 0),
+        ("+1V8", 0.5, -4.2, 0), ("VDDO_FLASH", -1.3, 4.2, 0), ("VDDO_PSRAM", 2.3, 4.2, 0), ("VDD_MIPI", 0.6, 4.2, 0),
     ):  # fmt: skip
         C("100n", (cx + dx, cy + dy), net, rot=rot)
     C("10u", (cx + 7.4, cy - 3.0), "+3V3", rot=90)
