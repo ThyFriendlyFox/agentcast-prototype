@@ -5030,9 +5030,9 @@
 			(uuid "3e2d66f9-b64a-5e19-b095-53d5d35c5824")
 		)
 		(embedded_fonts no)
-		(model "${KICAD10_3DMODEL_DIR}/RF_Module.3dshapes/ESP32-C6-MINI-1.step"
+		(model "${KIPRJMOD}/models/esp32_c6_mini_1.wrl"
 			(offset
-				(xyz 0 0 0)
+				(xyz 0 2.7 0)
 			)
 			(scale
 				(xyz 1 1 1)

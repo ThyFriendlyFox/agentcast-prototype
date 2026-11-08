@@ -1190,6 +1190,8 @@ def build() -> kicadgen.Design:
     preroute(d)
     stitch_grounds(d)
     d.model("J3", "${KIPRJMOD}/models/hdmi_a_plug.wrl", offset=(0.0, -5.65, -2.9))
+    # KiCad 10 has no ESP32-C6-MINI-1 body installed here: a box the size of its fab outline (models/README.md).
+    d.model("U2", "${KIPRJMOD}/models/esp32_c6_mini_1.wrl", offset=(0.0, 2.7, 0.0), replace=True)
 
     d.text("AGENTCAST v0.5", BX + 54.0, BY + 1.6, "B.SilkS", 1.0, 0.15)
     d.text("MUTE", MUTE_AT[0], BY + H - 6.4, "F.SilkS", 0.8, 0.12)
