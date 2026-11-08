@@ -987,7 +987,7 @@ def build() -> kicadgen.Design:
     C("1u", (cx + 7.4, cy + 6.3), "VDDO_PSRAM", rot=90)
     C("1u", (cx - 1.5, cy + 6.3), "VDD_MIPI")
     C("1u", (cx + 4.0, cy - 7.2), "VDDO_4")
-    R("4.02k", (cx - 3.6, cy + 6.3), "DSI_REXT", "GND")  # DSI PHY reference (datasheet pin 34)
+    R("4.02k", (cx - 1.87, cy + 1.87), "DSI_REXT", "GND")  # DSI PHY reference (pin 34), under U1 between its EP vias
     # Core supply: TLV62569 per HDG Fig. 5 (chip revision v3.0 and later).
     add("U5", "Regulator_Switching:TLV62569DBV", "TLV62569DBV", SOT235, (cx + 8.0, 3.2),
         {"4": "+3V3", "1": "EN_DCDC", "3": "SW_HP", "2": "GND", "5": "FB_DCDC"}, rot=90)  # fmt: skip
