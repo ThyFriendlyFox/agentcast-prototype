@@ -5,9 +5,13 @@ PY := $(shell [ -x /opt/workcenters/ee/venv/bin/python ] && echo /opt/workcenter
 
 .PHONY: design gates lint verify render fab cm5-model assembly
 
+# A board with a finish.py: the router's leftovers routed by it (finish.py's docstring).
 design:
 	python3 hardware/$(VERSION)/library/gen_library.py
-	set -e; for b in $(BOARDS); do workcenter design $(CURDIR)/$$b/design.py --route; done
+	set -e; for b in $(BOARDS); do workcenter design $(CURDIR)/$$b/design.py --route; \
+	  workcenter drc $(CURDIR)/$$b > /dev/null || true; \
+	  if [ -f $$b/finish.py ]; then CAREFUL_TRIES=20 CAREFUL_DEPTH=2 python3 $$b/finish.py $$b --careful; fi; \
+	done
 
 gates:
 	set -e; for b in $(BOARDS); do workcenter gates $(CURDIR)/$$b; done

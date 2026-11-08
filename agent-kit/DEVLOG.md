@@ -122,3 +122,20 @@ asked why not more layers; the board went to eight (JLC081611-2116: ground
 planes on In1 and In6, four inner routing layers). Its 0.109 mm outer
 prepreg is close enough to the six-layer board's 0.1 mm that the pair
 widths stay: about 104 ohm TMDS and 102 ohm DSI.
+
+## 2026-11-08 — v0.5: GREEN at 80 x 30 mm
+
+Eight layers did not finish it either: the router kept leaving 15-25
+connections at the P4, every one a pin its neighbours' vias boxed in. The
+human allowed a longer board; at 80 mm the mic moved off the P4's bottom
+row. The rest came from the pins, not the router: movable GPIOs spread to
+every other free pin, the flash moved to the top face with its bus drawn
+by hand, pins boxed in outside take a via between the pad ring and the
+exposed pad, and one HDMI pair runs 0.6 mm further to free a via spot. Two
+fanout bugs fell out on the way (a lane check that refused every via once
+one lane had closed, and a fan pass that forgot vias already placed).
+What FreeRouting still leaves, finish.py routes: a grid search that may
+move another net only if that net then rejoins, and undoes the move
+otherwise. A rip-up that kept its moves regardless went from 23 open to
+150; the careful one cannot make a board worse. Gates GREEN, make verify
+GREEN.

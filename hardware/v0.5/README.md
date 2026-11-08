@@ -3,19 +3,25 @@
 > **In work.** Made from [v0.4](../v0.4/) (commit `223e73b`). v0.5 drops the
 > Raspberry Pi CM5 and puts our own small computer on a Chromecast-sized stick.
 
-One board, **72 x 30 mm**, 8 layers, parts on both faces. A male HDMI plug
+One board, **80 x 30 mm**, 8 layers, parts on both faces. A male HDMI plug
 (XUNPU HDMI-003) clamps one end; the Wi-Fi antenna is at the other.
 
 | | v0.4 | v0.5 |
 |---|---|---|
-| Size | 67 x 46 mm | 72 x 30 mm |
+| Size | 67 x 46 mm | 80 x 30 mm |
 | Computer | Raspberry Pi CM5 module (55 x 40 mm, Linux) | ESP32-P4 (10 x 10 mm, 32 MB PSRAM in the package, no Linux) |
 | HDMI | from the CM5 | LT8912B MIPI DSI to HDMI bridge, with HDMI audio |
 | Wi-Fi | the CM5's | ESP32-C6-MINI-1 module (Wi-Fi 6), SDIO to the P4 |
 | HDMI plug footprint | HDMI Type-A layout, 4 numbers unconfirmed | the XUNPU HDMI-003 drawing, every number |
 | Layers | 4 | 8 (F.Cu, In1 GND, In2-In5, In6 GND, B.Cu), JLCPCB JLC081611-2116 |
 
+| Top | Bottom | Turning |
+|---|---|---|
+| ![3D top](dongle/docs/board-3d-iso.png) | ![3D bottom](dongle/docs/board-3d-bottom.png) | ![turning](dongle/docs/board-spin.gif) |
+
 ![layers](dongle/docs/layers.png)
+
+Schematic: [`dongle/docs/schematic.png`](dongle/docs/schematic.png).
 
 ## Why no full computer
 
@@ -41,7 +47,7 @@ renders the screen. A 2-lane DSI link at 1.5 Gb/s per lane (ESP32-P4 datasheet
 | Ref | Part | Why |
 |---|---|---|
 | U1 | Espressif ESP32-P4NRW32, QFN104 | 2 x RISC-V 400 MHz, 32 MB PSRAM in the package (no DDR to route), MIPI DSI, I2S, USB 2.0 HS, JPEG codec, H.264 encoder |
-| U4 | Winbond W25Q128JVPIQ, WSON-8 | 16 MB flash for the firmware |
+| U4 | Winbond W25Q128JVPIQ, WSON-8 | 16 MB flash for the firmware; top face, under the P4's flash pins |
 | Y1 | 40 MHz, +/-10 ppm, 3225 | The P4 firmware supports 40 MHz only (Espressif hardware design guidelines, HDG 1.4.2) |
 | U5, L1 | TI TLV62569 + 2.2 uH | The P4's core supply, under the P4's own control (EN_DCDC, FB_DCDC), exactly HDG Fig. 5 |
 | U3 | Lontium LT8912B, QFN64 | MIPI DSI to HDMI 1.4 with I2S audio input |
@@ -128,7 +134,8 @@ are plated; these are plain cuts, and the shell is soldered at its four tabs.
 8 layers, 1.6 mm, JLCPCB's JLC081611-2116: F.Cu signal, In1.Cu GND plane,
 In2.Cu to In5.Cu signal, In6.Cu GND plane, B.Cu signal. The 0.35 mm pitch of
 the P4 did not route on 4 layers (20-38 connections left open on every try),
-nor on 6 layers at 26 or 30 mm wide (26-31 left open). The prepreg under each
+nor on 6 layers at 26 or 30 mm wide (26-31 left open), nor on 8 layers at
+72 mm long (23 left open); "Layout and routing" says what closed the rest. The prepreg under each
 outer layer is 0.109 mm of 2116 (er 4.16), so the pairs are narrow:
 
 | Pairs | Width / gap | Differential impedance |
@@ -152,6 +159,44 @@ the LT8912B's bottom row. CK crosses D1 on In2.Cu through four vias. Lengths
 **Firmware must swap the polarity of DSI data lanes D0 and D1** in the
 LT8912B: their P and N are crossed on the board so the pairs do not cross each
 other. The LT8912B datasheet lists its data lanes as "polarity swappable".
+
+## Layout and routing
+
+80 x 30 mm. The P4 has 62 signal and supply pins at 0.35 mm pitch, and the
+ring around it is where every route failed. What made it route:
+
+- **Room.** The board grew from 72 x 26 mm to 80 x 30 mm. The mic, its LDO and
+  its clock buffers sit in the gap left of the P4, by its I2S pins; the P4's
+  bulk capacitors stand 1 mm off its pins.
+- **Pin plan.** Signals the GPIO matrix can move sit on every other free pin,
+  facing what they drive (Pin plan).
+- **Fanout** (`fanout` in `design.py`). Before routing, each P4 and LT8912B
+  pin gets a via: runs of neighbouring pins splay at 45 degrees into one row of
+  vias 0.6 mm apart (no track has to pass between two vias, which at this pitch
+  it cannot); a path search takes pins the fan cannot reach; pins boxed in
+  outside take a via inward, in the 0.85 mm between the pad ring and the
+  exposed pad, where the bottom-face decoupling caps step aside for them.
+  All but two of the P4's pins (29 and 72) get one, the flash pins drawn by
+  hand aside, and all but one of the LT8912B's (59); the router joins those.
+- **Flash.** U4 sits on the top face under the P4's flash pins, turned so its
+  near row runs VCC, HOLD, CK, D like pins 30-33; those four are drawn by hand
+  (`route_flash`), each in its own lane, and pins 27-29 take vias above the
+  lanes. The bus needs no via in the P4's busiest corner.
+- **HDMI D0** runs 0.6 mm further before its jog, which opens a via spot for
+  the LT8912B's +1V8 pin 26, boxed in between D1 and D0 until then.
+- **Finisher** (`finish.py`). FreeRouting leaves a few connections open
+  (4 on the last run). `finish.py --careful` routes each on a 0.025 mm grid over
+  the six routing layers; where it must cross another net's copper it keeps
+  the crossing only if every net it moves rejoins (two levels deep), and undoes
+  it otherwise, so it never leaves the board worse. It also joins pour islands
+  cut off from the planes with a GND via. `make design` runs it after the
+  router. FreeRouting does not give the same result every run; if a run leaves
+  more than the finisher closes, run `make design` again.
+
+Two things the workcenter (Via) does not do yet, worked around here: its
+router and via placement ignore the 0.25 mm hole clearance, so this board
+keeps 0.15 mm copper clearance (a 0.4 / 0.2 mm via's hole then sits 0.25 mm
+from other copper); and it writes a generic stackup (Open item 8).
 
 ## Open items
 
