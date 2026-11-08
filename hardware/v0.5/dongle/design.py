@@ -502,6 +502,7 @@ SEARCH_LAT = (0.0, 0.2, -0.2, 0.4, -0.4, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2, 1.5, -
 
 
 FAN_MAZE = True
+FAN_FIRST = {"U3.58": 0.45}  # I2S_DOUT: its neighbours' vias boxed it in, so it picks first
 INWARD_T = (0.4, 0.45, 0.5, 0.55)  # a via this far in from a pad's inner end, short of the exposed pad
 FAN_PITCH, FAN_REACH = 0.6, 0.6  # the fan's via pitch, and how far past the pad end its middle via stands
 
@@ -576,11 +577,18 @@ def fanout(d: kicadgen.Design, ref: str, skip: set[str]) -> tuple[int, list[str]
             return None
         return added
 
+    for pad in pads:  # pins that go first: a via straight out, before their neighbours fan round them
+        if f"{ref}.{pad.number}" in FAN_FIRST:
+            _, end, (ux, uy), _ = _pad_frame(pad, ox, oy)
+            t = FAN_FIRST[f"{ref}.{pad.number}"]
+            got[pad.number] = _try_spot(d, pad, _pad_frame(pad, ox, oy)[0], (end[0] + ux * t, end[1] + uy * t), boxes)
     if FAN_MAZE:
         for run in _runs(pads, ox, oy):
             mid = (len(run) - 1) / 2
             reach = FAN_REACH + mid * (FAN_PITCH - 0.35)
             for i in sorted(range(len(run)), key=lambda i: abs(i - mid)):
+                if got[run[i].number] is not None:
+                    continue
                 got[run[i].number] = _fan_path(d, run[i], ox, oy, boxes, reach, (i - mid) * (FAN_PITCH - 0.35))
         for run in _runs(pads, ox, oy):  # what the fan could not place: a path search, near rows first
             for pad in run:
