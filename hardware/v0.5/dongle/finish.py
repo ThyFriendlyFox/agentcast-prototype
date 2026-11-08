@@ -84,6 +84,9 @@ class Grid:
                     "hole": mm(pad.GetDrillSizeX()) if pad.HasHole() else 0.0,
                     "npth": pad.GetAttribute() == pcbnew.PAD_ATTRIB_NPTH,
                     "at": (mm(p.x), mm(p.y)),
+                    # its copper for joining pieces: a round pad is round, not its box
+                    "own": ("seg", (mm(p.x), mm(p.y)), (mm(p.x), mm(p.y)), mm(min(pad.GetSizeX(), pad.GetSizeY())) / 2)
+                    if pad.GetShape() in (pcbnew.PAD_SHAPE_CIRCLE, pcbnew.PAD_SHAPE_OVAL) else None,
                 })
         # the copper as plain data: [net, name, layer or None for a via, a, b, half width, drill]
         self.copper = []
@@ -246,7 +249,7 @@ def own_cells(g: Grid, net: int) -> dict:
         if pad["net"] != net:
             continue
         for n in pad["layers"]:
-            add(n, pad["shape"])
+            add(n, pad["own"] or pad["shape"])
         if len(pad["layers"]) > 2:
             links.append(g.cell(*pad["at"]))
     for onet, _name, layer, a, e, r, _drill in g.copper:
@@ -463,6 +466,131 @@ def clusters(g: Grid, net: int) -> list[set]:
     return sorted(groups.values(), key=len, reverse=True)
 
 
+def dead_pour_vias(g: Grid, board: pcbnew.BOARD, gnd: int) -> None:
+    """Join each GND pour island cut off from the rest (fills on every layer, joined where a GND
+    via or through pad lands on two of them): a via on it, or from a GND pad on it a track to a via,
+    in a spot with ROOMY mm free around it so the planes reach the via."""
+    pcbnew.ZONE_FILLER(board).Fill(board.Zones())
+    nodes = []
+    for z in board.Zones():
+        if z.GetIsRuleArea() or z.GetNetname() != "GND":
+            continue
+        for lid in z.GetLayerSet().Seq():
+            fill = z.GetFilledPolysList(lid)
+            for k in range(fill.OutlineCount()):
+                nodes.append((pcbnew.LayerName(lid), fill.Outline(k)))
+    links = [c[3] for c in g.copper if c[0] == gnd and c[2] is None]
+    links += [p["at"] for p in g.pads if p["net"] == gnd and len(p["layers"]) > 2]
+    par = list(range(len(nodes)))
+
+    def find(a):
+        while par[a] != a:
+            par[a] = par[par[a]]
+            a = par[a]
+        return a
+
+    def inside(ol, x, y):
+        return ol.PointInside(pcbnew.VECTOR2I(pcbnew.FromMM(x), pcbnew.FromMM(y)))
+
+    for at in links:
+        hit = [i for i, (_l, ol) in enumerate(nodes) if inside(ol, *at)]
+        for i in hit[1:]:
+            par[find(i)] = find(hit[0])
+    size: dict[int, float] = {}
+    for i, (_l, ol) in enumerate(nodes):
+        size[find(i)] = size.get(find(i), 0.0) + abs(ol.Area())
+    main = max(size, key=size.get)
+    span = int(ROOMY / GRID)
+    ok = np.isin(g.hard_via, (FREE, gnd)) & np.isin(g.soft_via, (FREE, gnd))
+    roomy = ok.copy()
+    roomy[span:, :] &= ok[:-span, :]
+    roomy[:-span, :] &= ok[span:, :]
+    roomy[:, span:] &= ok[:, :-span]
+    roomy[:, :-span] &= ok[:, span:]
+    for i, (name, island) in enumerate(nodes):
+        if find(i) == main or name not in ("F.Cu", "B.Cu"):
+            continue
+        done = False
+        for pad in g.pads:
+            if pad["net"] != gnd or name not in pad["layers"] or not inside(island, *pad["at"]):
+                continue
+            path = search_roomy(g, gnd, {(name, *g.cell(*pad["at"]))}, roomy)
+            if path is None:  # no roomy spot within reach: any spot a via fits
+                path = search_roomy(g, gnd, {(name, *g.cell(*pad["at"]))}, ok)
+            if path is None:
+                continue
+            tracks, vias = path_copper(g, path)
+            vias.append(g.at(path[-1][1], path[-1][2]))
+            draw(g, gnd, tracks, vias)
+            print(f"  GND pad at {pad['at']} on a cut-off {name} pour island: via at {vias[-1]}")
+            done = True
+            break
+        for pad in [] if done else g.pads:  # a crossing, kept only if what it moves rejoins
+            if pad["net"] != gnd or name not in pad["layers"] or not inside(island, *pad["at"]):
+                continue
+            price: dict[int, float] = {}
+            for _ in range(CAREFUL_TRIES):
+                snap = [list(c) for c in g.copper]
+                path = search(g, gnd, {(name, *g.cell(*pad["at"]))}, "via", price, reach=2.5)
+                if path is None:
+                    break
+                tracks, vias = path_copper(g, path)
+                vias.append(g.at(path[-1][1], path[-1][2]))
+                ripped = rip(g, gnd, tracks, vias)
+                draw(g, gnd, tracks, vias)
+                g.rebuild()
+                if all(connect_free(g, o) for o in sorted(ripped)):
+                    print(f"  GND pad at {pad['at']} on a cut-off {name} pour island: via at {vias[-1]}, "
+                          f"rerouting {sorted(g.names.get(o, o) for o in ripped)}")
+                    done = True
+                    break
+                g.copper = snap
+                g.rebuild()
+                for o in ripped:
+                    price[o] = price.get(o, 0.0) + 10.0
+            if done:
+                break
+        if not done:
+            print(f"  OPEN a {name} GND pour island at {mm(island.BBox().GetX()):.2f}, {mm(island.BBox().GetY()):.2f}")
+    g.rebuild()
+
+
+ROOMY = 0.3
+
+
+def search_roomy(g: Grid, net: int, src: set, roomy: np.ndarray, reach: float = 2.5):
+    """Shortest path on the source's layer, then any layer, to a cell `roomy` allows a via in."""
+    best, parent, heap = {}, {}, []
+    for c in src:
+        best[c] = 0.0
+        heapq.heappush(heap, (0.0, c))
+    ci, cj = next(iter(src))[1:]
+    span = int(reach / GRID)
+    while heap:
+        cost, c = heapq.heappop(heap)
+        if cost > best.get(c, 1e18):
+            continue
+        layer, i, j = c
+        if roomy[i, j] and c not in src:
+            path = [c]
+            while path[-1] in parent:
+                path.append(parent[path[-1]])
+            return path[::-1]
+        for di, dj, w in ((1, 0, 1.0), (-1, 0, 1.0), (0, 1, 1.0), (0, -1, 1.0),
+                          (1, 1, 1.41), (1, -1, 1.41), (-1, 1, 1.41), (-1, -1, 1.41)):
+            a, b = i + di, j + dj
+            if abs(a - ci) > span or abs(b - cj) > span or not (0 <= a < g.nx and 0 <= b < g.ny):
+                continue
+            if g.hard[layer][a, b] not in (FREE, net) or g.soft[layer][a, b] not in (FREE, net):
+                continue
+            q = (layer, a, b)
+            if cost + w < best.get(q, 1e18):
+                best[q] = cost + w
+                parent[q] = c
+                heapq.heappush(heap, (cost + w, q))
+    return None
+
+
 def gnd_islands(board: pcbnew.BOARD, report: dict) -> list:
     """GND pads the DRC finds cut off from the rest: [(pad, (x, y))]."""
     out = []
@@ -578,6 +706,7 @@ def main(board_dir: Path, rip_up: bool = True, careful: bool = False) -> int:
         draw(g, gnd, tracks, vias)
         g.rebuild()
         print(f"  GND pad {pad.GetParentFootprint().GetReference()}.{pad.GetNumber()}: via at {vias[-1]}")
+    dead_pour_vias(g, board, gnd)
     write_back(g)
     pcbnew.ZONE_FILLER(board).Fill(board.Zones())
     board.Save(str(pcb_path))

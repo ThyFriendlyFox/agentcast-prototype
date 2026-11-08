@@ -951,13 +951,13 @@ def build() -> kicadgen.Design:
     for net, dx, dy, rot in (
         ("+3V3", -4.2, -2.0, 90), ("+3V3", -4.2, 2.0, 90), ("+3V3", 4.2, 2.6, 90), ("+3V3", 1.5, -4.2, 0),
         ("VDD_HP", -4.2, 3.8, 90), ("VDD_HP", 4.2, 0.6, 90), ("VDD_HP", 4.2, -1.1, 90), ("VDD_HP", -1.0, -4.2, 0),
-        ("+1V8", 0.5, -4.2, 0), ("VDDO_FLASH", -1.3, 4.2, 0), ("VDDO_PSRAM", 2.3, 4.2, 0), ("VDD_MIPI", 0.6, 4.2, 0),
+        ("+1V8", 0.5, -4.2, 0), ("VDDO_FLASH", -0.85, 4.2, 0), ("VDDO_PSRAM", 2.3, 4.2, 0), ("VDD_MIPI", 0.6, 4.2, 0),
     ):  # fmt: skip
         C("100n", (cx + dx, cy + dy), net, rot=rot)
     C("10u", (cx + 7.4, cy - 3.0), "+3V3", rot=90)
     C("22u", (cx + 7.4, cy + 1.0), "VDD_HP", rot=90)
     C("1u", (cx + 7.4, cy + 4.0), "VDDO_FLASH", rot=90)
-    C("1u", (cx + 1.5, cy + 6.3), "VDDO_PSRAM")
+    C("1u", (cx + 7.4, cy + 6.3), "VDDO_PSRAM", rot=90)
     C("1u", (cx - 1.5, cy + 6.3), "VDD_MIPI")
     C("1u", (cx + 4.0, cy - 7.2), "VDDO_4")
     R("4.02k", (cx - 3.6, cy + 6.3), "DSI_REXT", "GND")  # DSI PHY reference (datasheet pin 34)
