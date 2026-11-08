@@ -377,9 +377,11 @@ def path_copper(g: Grid, path: list) -> tuple[list, list]:
     return tracks, vias
 
 
-def rip(g: Grid, net: int, tracks: list, vias: list) -> set[int]:
-    """Remove other nets' routed copper too close to the new copper; returns their nets."""
-    hit, keep = set(), []
+def rip(g: Grid, net: int, tracks: list, vias: list, whole_stubs: bool = False) -> set[int]:
+    """Remove other nets' routed copper too close to the new copper; returns their nets. With
+    `whole_stubs` (on the unrouted board), the rest of each removed piece's fanout stub goes too: a
+    stub left without its via is fixed copper the router cannot join."""
+    hit, keep, gone = set(), [], []
     for item in g.copper:
         o, name, layer, p0, p1, r, _drill = item
         near = False
@@ -393,8 +395,14 @@ def rip(g: Grid, net: int, tracks: list, vias: list) -> set[int]:
                 near = near or any(_seg_dist(p0, p1, v) < g.clear + g.via_d / 2 + r + HOLE_MARGIN + SLACK for v in vias)
         if near:
             hit.add(o)
+            gone.append(item)
         else:
             keep.append(item)
+    while whole_stubs and gone:  # pieces of the same net sharing an end with a removed one
+        ends = {(it[0], round(q[0], 3), round(q[1], 3)) for it in gone for q in (it[3], it[4])}
+        gone = [it for it in keep if not protected(it[1])
+                and any((it[0], round(q[0], 3), round(q[1], 3)) in ends for q in (it[3], it[4]))]
+        keep = [it for it in keep if it not in gone]
     g.copper = keep
     return hit
 
@@ -467,7 +475,53 @@ def gnd_islands(board: pcbnew.BOARD, report: dict) -> list:
     return out
 
 
-def main(board_dir: Path, rip_up: bool = True) -> int:
+def connect_free(g: Grid, net: int) -> bool:
+    """Join every piece of the net through free cells only; True when it is one piece."""
+    parts = clusters(g, net)
+    while len(parts) > 1:
+        path = search(g, net, parts[-1], set().union(*parts[:-1]), None, reach=6.0)
+        if path is None:
+            return False
+        draw(g, net, *path_copper(g, path))
+        g.rebuild()
+        parts = clusters(g, net)
+    return True
+
+
+CAREFUL_TRIES = 8
+
+
+def careful_connect(g: Grid, net: int, names: dict, price: dict) -> bool:
+    """Join the net; where it must cross another net's copper, keep the crossing only if every net
+    it displaces then rejoins through free cells. A failed try is undone in full, and the nets it
+    displaced cost more next try, so the board never ends worse than it started."""
+    snap = [list(c) for c in g.copper]
+    if connect_free(g, net):
+        print(f"  routed {names.get(net, net)} through free cells")
+        return True
+    g.copper = [list(c) for c in snap]
+    g.rebuild()
+    for _ in range(CAREFUL_TRIES):
+        parts = clusters(g, net)
+        path = search(g, net, parts[-1], set().union(*parts[:-1]), price, reach=6.0)
+        if path is None:
+            break
+        tracks, vias = path_copper(g, path)
+        ripped = rip(g, net, tracks, vias)
+        draw(g, net, tracks, vias)
+        g.rebuild()
+        if connect_free(g, net) and all(connect_free(g, o) for o in sorted(ripped)):
+            print(f"  routed {names.get(net, net)}, rerouting {sorted(names.get(o, o) for o in ripped)}")
+            return True
+        g.copper = [list(c) for c in snap]
+        g.rebuild()
+        for o in ripped:
+            price[o] = price.get(o, 0.0) + 10.0
+    print(f"  OPEN {names.get(net, net)}: no try kept")
+    return False
+
+
+def main(board_dir: Path, rip_up: bool = True, careful: bool = False) -> int:
     pcb_path = next(board_dir.glob("*.kicad_pcb"))
     report = json.loads((board_dir / "build" / "drc.json").read_text(encoding="utf-8"))
     board = pcbnew.LoadBoard(str(pcb_path))
@@ -487,6 +541,9 @@ def main(board_dir: Path, rip_up: bool = True) -> int:
     price: dict[int, float] = {}
     failed: set[int] = set()
     routes = 0
+    if careful:
+        failed = {n for n in queue if not careful_connect(g, n, names, price)}
+        queue = []
     while queue and routes < MAX_ROUTES:
         net = queue.pop(0)
         parts = clusters(g, net)
@@ -599,7 +656,7 @@ def preroute(board_dir: Path, report_path: Path) -> int:
                         print(f"  OPEN {spec['net']}: no path")
                         failed.append(spec["net"])
                         break
-                    ripped = rip(g, net, *path_copper(g, path))
+                    ripped = rip(g, net, *path_copper(g, path), whole_stubs=True)
                 tracks, vias = path_copper(g, path)
                 draw(g, net, tracks, vias)
                 FIXED.add(spec["net"])
@@ -639,5 +696,6 @@ if __name__ == "__main__":
     if args and args[0] == "--pre":  # finish.py --pre BOARD_DIR DRC_JSON
         sys.exit(preroute(Path(args[1]).resolve(), Path(args[2]).resolve()))
     rip_up = "--no-rip" not in args  # --no-rip: only paths through free copper, nothing routed moves
-    args = [a for a in args if a != "--no-rip"]
-    sys.exit(main(Path(args[0] if args else Path(__file__).parent).resolve(), rip_up))
+    careful = "--careful" in args  # --careful: a crossing is kept only if what it displaces rejoins
+    args = [a for a in args if a not in ("--no-rip", "--careful")]
+    sys.exit(main(Path(args[0] if args else Path(__file__).parent).resolve(), rip_up, careful))
