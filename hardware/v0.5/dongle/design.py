@@ -980,10 +980,11 @@ def build() -> kicadgen.Design:
     add("SW3", "Switch:SW_Push", "RESET", "Button_Switch_SMD:SW_SPST_B3U-1000P", (cx - 9.5, 7.0), {"1": "CHIP_PU", "2": "GND"}, layer="B.Cu")
     R("10k", (cx - 6.2, cy - 8.0), "+3V3", "BOOT", rot=90)
     R("10k", (cx - 7.4, cy - 8.0), "+3V3", "GPIO36_PU", rot=90)
-    # Flash, 16 MB quad SPI, left of the DSI lanes (all its pins on the P4's side), on VDDO_FLASH (3.3 V default, HDG Table 1); CS pulled up (HDG 1.3.4).
+    # Flash, 16 MB quad SPI, on the top face under the P4's flash pins, turned so its near row runs in
+    # their order (VCC, HOLD, CK, D): the bus stays on F.Cu, no vias in the P4's busiest corner. On VDDO_FLASH (3.3 V default, HDG Table 1); CS pulled up (HDG 1.3.4).
     add("U4", "Memory_Flash:W25Q128JVP", "W25Q128JVPIQ", "Package_SON:WSON-8-1EP_6x5mm_P1.27mm_EP3.4x4.3mm",
         (cx - 5.6, cy + 9.0), {"1": "FLASH_CS", "2": "FLASH_Q", "3": "FLASH_WP", "4": "GND", "5": "FLASH_D",
-                               "6": "FLASH_CK", "7": "FLASH_HOLD", "8": "VDDO_FLASH", "9": "GND"}, layer="B.Cu")  # fmt: skip
+                               "6": "FLASH_CK", "7": "FLASH_HOLD", "8": "VDDO_FLASH", "9": "GND"}, rot=90, layer="F.Cu")  # fmt: skip
     R("10k", (cx - 9.4, cy + 7.2), "VDDO_FLASH", "FLASH_CS", rot=90)
     C("100n", (cx - 1.4, cy + 9.0), "VDDO_FLASH", rot=90)
 
@@ -1156,7 +1157,8 @@ def build() -> kicadgen.Design:
     tie_pad_grounds(d, {"U1": (0, 0), "U3": (0, 0), "J3": (-1, 0), "J3B": (-1, 0)})
     dsi = {f"DSI_{n}_{s}" for n in ("D0", "D1", "CK") for s in "PN"}
     hdmi = {f"HDMI_{n}_{s}" for n in ("D0", "D1", "D2", "CK") for s in "PN"}
-    d.fanout = {ref: fanout(d, ref, dsi | hdmi) for ref in ("U1", "U3")}
+    flash = {f"FLASH_{s}" for s in ("CS", "Q", "WP", "HOLD", "CK", "D")}  # on F.Cu straight to U4
+    d.fanout = {ref: fanout(d, ref, dsi | hdmi | flash) for ref in ("U1", "U3")}
     preroute(d)
     stitch_grounds(d)
     d.model("J3", "${KIPRJMOD}/models/hdmi_a_plug.wrl", offset=(0.0, -5.65, -2.9))
