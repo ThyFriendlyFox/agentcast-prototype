@@ -294,11 +294,12 @@ def route_dsi(d: kicadgen.Design) -> list[str]:
     def rnd(pts: list) -> list:
         return [(round(x, 4), round(y, 4)) for x, y in pts]
 
+    traces: list[list] = []  # [net, points, layer]: drawn after the skew is tuned
+
     def put(net: str, pts: list, layer: str = "F.Cu") -> None:
-        d.track(net, rnd(pts), layer, width=DSI_W)
+        traces.append([net, list(pts), layer])
 
     report = []
-    lengths = {}
     lanes = (("D0", "39", "40", "2", "1", LANE_D0), ("D1", "35", "36", "4", "3", LANE_D1))
     for name, up, un, lp, ln, lane in lanes:
         (xp, yp), (xn, yn) = pad_at(d, "U1", up), pad_at(d, "U1", un)
@@ -316,7 +317,6 @@ def route_dsi(d: kicadgen.Design) -> list[str]:
         p[-1], n[-1] = (tp, tn) if math.dist(p[-1], tp) < math.dist(n[-1], tp) else (tn, tp)
         put(f"DSI_{name}_P", p)
         put(f"DSI_{name}_N", n)
-        lengths[name] = (seg_len(p), seg_len(n))
 
     # CK: F.Cu lane, then In2.Cu under D1's riser, then up into pins 7 / 8.
     (xp, yp), (xn, yn) = pad_at(d, "U1", "38"), pad_at(d, "U1", "37")
@@ -342,7 +342,6 @@ def route_dsi(d: kicadgen.Design) -> list[str]:
     put("DSI_CK_N", ne)
     for net, at in (("DSI_CK_P", (vpx, vpy)), ("DSI_CK_N", (vnx, vny)), ("DSI_CK_P", (opx, opy)), ("DSI_CK_N", (onx, ony))):
         d.via(net, round(at[0], 4), round(at[1], 4))
-    lengths["CK"] = (seg_len(p) + seg_len(pi) + seg_len(pe), seg_len(n) + seg_len(ni) + seg_len(ne))
 
     # U3 pin 5 (+1V8) between D1 and CK: down to a via of its own. Pin 6 (GND) into the exposed pad.
     (x5, y5), (x6, y6) = pad_at(d, "U3", "5"), pad_at(d, "U3", "6")
@@ -351,9 +350,82 @@ def route_dsi(d: kicadgen.Design) -> list[str]:
     d.via("+1V8", vx, vy)
     d.track("GND", rnd([(x6, y6), (x6, y6 - 1.0)]), "F.Cu", width=0.2)
 
-    for name, (lp, ln) in lengths.items():
+    def length(net: str) -> float:
+        return sum(seg_len(t[1]) for t in traces if t[0] == net)
+
+    for name in ("D0", "D1", "CK"):  # serpentines on the shorter trace of each pair
+        pn, nn = f"DSI_{name}_P", f"DSI_{name}_N"
+        short, long_ = (pn, nn) if length(pn) < length(nn) else (nn, pn)
+        tune_skew(d, traces, short, long_, length(long_) - length(short))
+    for net, pts, layer in traces:
+        d.track(net, rnd(pts), layer, width=DSI_W)
+    for name in ("D0", "D1", "CK"):
+        lp, ln = length(f"DSI_{name}_P"), length(f"DSI_{name}_N")
         report.append(f"{name}: P {lp:.3f} mm, N {ln:.3f} mm, skew {abs(lp - ln):.3f} mm")
     return report
+
+
+BUMP_H, BUMP_TOP, BUMP_GAP = (0.15, 0.12, 0.09, 0.06), 0.3, 0.35  # heights tried, top length, flat between
+
+
+def tune_skew(d: kicadgen.Design, traces: list, short: str, long_: str, need: float) -> None:
+    """Rectangular bumps on `short`'s longest straight run, away from its partner, until it is as long
+    as `long_`: each adds twice its height. A bump is as high as the gap to every other trace, pad and
+    via allows (BUMP_H, highest first); the last is cut to the length still missing."""
+    w, clear = DSI_W, d.clearance + 0.01
+    piece = max((t for t in traces if t[0] == short and t[2] == "F.Cu"), key=lambda t: seg_len(t[1]))
+    pts = piece[1]
+    i = max(range(len(pts) - 1), key=lambda k: math.dist(pts[k], pts[k + 1]))
+    a, b = pts[i], pts[i + 1]
+    run = math.dist(a, b)
+    ux, uy = (b[0] - a[0]) / run, (b[1] - a[1]) / run
+    partner = [t[1] for t in traces if t[0] == long_ and t[2] == "F.Cu"]
+    mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+    near = min((q for pl in partner for q in pl), key=lambda q: math.dist(q, mid))
+    side = 1.0 if (mid[0] - near[0]) * -uy + (mid[1] - near[1]) * ux > 0 else -1.0  # away from the partner
+    nx, ny = -uy * side, ux * side
+    others = [(t[1], t[0]) for t in traces if t[2] == "F.Cu" and t is not piece]
+    boxes = [bx for bx in d.pad_boxes() if bx.net.removeprefix("/") != short and (bx.layer == "F.Cu" or bx.kind != "smd")]
+
+    def fits(seg: list) -> bool:
+        for p0, p1 in itertools.pairwise(seg):
+            for pl, net in others:
+                for q0, q1 in itertools.pairwise(pl):
+                    gap = min(_seg_point_dist(q0, q1, p0), _seg_point_dist(q0, q1, p1),
+                              _seg_point_dist(p0, p1, q0), _seg_point_dist(p0, p1, q1))
+                    if net != short and gap < clear + w:
+                        return False
+            for bx in boxes:
+                if _seg_box_dist(p0, p1, (bx.x1, bx.y1, bx.x2, bx.y2)) < clear + w / 2:
+                    return False
+            for onet, p, size, drill in d.vias:
+                if onet.removeprefix("/") != short and _seg_point_dist(p0, p1, p) < w / 2 - d.clearance + via_keep(d, size, drill):
+                    return False
+            for onet, q0, q1, ow, layer in d.segments:
+                if layer == "F.Cu" and onet.removeprefix("/") != short:
+                    gap = min(_seg_point_dist(q0, q1, p0), _seg_point_dist(q0, q1, p1),
+                              _seg_point_dist(p0, p1, q0), _seg_point_dist(p0, p1, q1))
+                    if gap < clear + (w + ow) / 2:
+                        return False
+        return True
+
+    at, bumps = 1.0, []  # 1 mm in from each end of the run
+    while need > 0.005 and at + BUMP_TOP + 1.0 <= run:
+        x0, y0 = a[0] + ux * at, a[1] + uy * at
+        x1, y1 = x0 + ux * BUMP_TOP, y0 + uy * BUMP_TOP
+        for h in BUMP_H:
+            h = min(h, need / 2)
+            bump = [(x0, y0), (x0 + nx * h, y0 + ny * h), (x1 + nx * h, y1 + ny * h), (x1, y1)]
+            if fits(bump):
+                bumps.append(bump[1:3])
+                need -= 2 * h
+                break
+        at += BUMP_TOP + BUMP_GAP
+    new = [a]  # each bump into the polyline, in order along the run
+    for (t0, t1) in bumps:
+        h0 = (t0[0] - a[0]) * nx + (t0[1] - a[1]) * ny
+        new += [(t0[0] - nx * h0, t0[1] - ny * h0), t0, t1, (t1[0] - nx * h0, t1[1] - ny * h0)]
+    pts[i : i + 2] = [*new, b]
 
 
 def tie_pad_grounds(d: kicadgen.Design, refs: dict[str, tuple[int, int]]) -> None:
