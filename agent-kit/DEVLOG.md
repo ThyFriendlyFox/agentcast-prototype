@@ -139,3 +139,16 @@ move another net only if that net then rejoins, and undoes the move
 otherwise. A rip-up that kept its moves regardless went from 23 open to
 150; the careful one cannot make a board worse. Gates GREEN, make verify
 GREEN.
+
+## 2026-11-17 — v0.5 on the latest Via
+
+Via #45 made the router keep the 0.25 mm hole clearance, the gap this board
+had worked around with 0.15 mm copper clearance. The board moved to Via
+5fd2c25 and 0.1 mm clearance; the fanout and the finisher hold the hole
+rule where it is the larger. FreeRouting left 3 connections where it had
+left 4 to 6, and the finisher closed them: DRC 0 errors, 0 unconnected.
+KiCad's library names an ESP32-C6-MINI-1 body it does not have; Espressif's
+own STEP came in with `workcenter fetch`, recorded in the library's
+sources.csv. The SIM gate's new corners run the mute sense 54 ways over
+0 to 40 C and 1 % resistors. The stackup is still the workcenter's generic
+one: order JLC081611-2116 by name.

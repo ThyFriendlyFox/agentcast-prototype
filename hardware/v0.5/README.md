@@ -185,7 +185,7 @@ ring around it is where every route failed. What made it route:
 - **HDMI D0** runs 0.6 mm further before its jog, which opens a via spot for
   the LT8912B's +1V8 pin 26, boxed in between D1 and D0 until then.
 - **Finisher** (`finish.py`). FreeRouting leaves a few connections open
-  (4 on the last run). `finish.py --careful` routes each on a 0.025 mm grid over
+  (3 on the last run). `finish.py --careful` routes each on a 0.025 mm grid over
   the six routing layers; where it must cross another net's copper it keeps
   the crossing only if every net it moves rejoins (two levels deep), and undoes
   it otherwise, so it never leaves the board worse. It also joins pour islands
@@ -193,10 +193,12 @@ ring around it is where every route failed. What made it route:
   router. FreeRouting does not give the same result every run; if a run leaves
   more than the finisher closes, run `make design` again.
 
-Two things the workcenter (Via) does not do yet, worked around here: its
-router and via placement ignore the 0.25 mm hole clearance, so this board
-keeps 0.15 mm copper clearance (a 0.4 / 0.2 mm via's hole then sits 0.25 mm
-from other copper); and it writes a generic stackup (Open item 8).
+Clearance: 0.1 mm copper to copper (JLCPCB's multilayer minimum is 0.09 mm),
+and 0.25 mm from a hole's edge to other copper. Since Via #45 the router and
+the workcenter's via checks keep the hole clearance themselves; `design.py`'s
+fanout (`via_keep`) and `finish.py` keep it where it is the larger of the two.
+Until then this board stood at 0.15 mm copper to copper, which stood in for
+the hole rule. The workcenter still writes a generic stackup (Open item 8).
 
 ## Open items
 

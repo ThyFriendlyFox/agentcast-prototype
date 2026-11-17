@@ -399,8 +399,8 @@ def rip(g: Grid, net: int, tracks: list, vias: list, whole_stubs: bool = False) 
         if o != net and not protected(name):
             if layer is None:
                 c = p0
-                keep = max(g.clear + r, drill / 2 + g.hole)  # its copper's clearance or its hole's
-                near = any(_seg_seg(a, b, c, c) < keep + WIDTH / 2 + SLACK for _, a, b in tracks)
+                reach = max(g.clear + r, drill / 2 + g.hole)  # its copper's clearance or its hole's
+                near = any(_seg_seg(a, b, c, c) < reach + WIDTH / 2 + SLACK for _, a, b in tracks)
                 near = near or any(math.dist(v, c) < g.vkeep + r + SLACK for v in vias)
             else:
                 near = any(lay == layer and _seg_seg(a, b, p0, p1) < g.clear + WIDTH / 2 + r + SLACK for lay, a, b in tracks)
