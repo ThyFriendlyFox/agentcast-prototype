@@ -154,7 +154,10 @@ Skew within each pair: 0.000 mm.
 The three DSI pairs are drawn by hand (`route_dsi` in `design.py`), not by
 the router: they leave the P4's bottom row, run under it as a U and climb into
 the LT8912B's bottom row. CK crosses D1 on In2.Cu through four vias. Lengths
-21.5-28.8 mm; skew within a pair: D0 1.16 mm, D1 1.16 mm, CK 2.14 mm.
+22.6-28.8 mm. The U left each pair's traces unequal (D0 and D1 1.16 mm, CK
+2.14 mm); serpentines on the shorter trace (`tune_skew`) close it: rectangular
+bumps on its longest straight run, away from its partner, each as high as the
+gaps to the next pair allow (0.15 mm at most). Skew within each pair: 0.000 mm.
 
 **Firmware must swap the polarity of DSI data lanes D0 and D1** in the
 LT8912B: their P and N are crossed on the board so the pairs do not cross each
@@ -209,9 +212,11 @@ the hole rule. The workcenter still writes a generic stackup (Open item 8).
 2. **LT8912B crystal frequency.** The datasheet (R1.13) asks for a crystal on
    XTALI/XTALO and gives no value. Y2 is marked "25MHz (confirm)". Ask Lontium
    or a distributor's reference design before ordering.
-3. **DSI skew.** The hand-drawn DSI pairs are matched in impedance but not
-   in length: 1.16 mm (D0, D1) and 2.14 mm (CK) within a pair, about 7 and
-   13 ps. Add serpentines to bring each under 0.1 mm before ordering.
+3. **DSI skew between pairs.** Within each pair the skew is 0.000 mm
+   (serpentines). Between pairs the lengths differ (D0 22.6, D1 28.8, CK
+   28.5 mm): about 40 ps from D0 to D1, 6 % of a bit at 1.5 Gb/s (667 ps).
+   Check it against the LT8912B's lane-to-lane skew limit before ordering;
+   tune_skew can match the pairs to each other too if it asks for less.
 4. **Plated slots.** The plug's drawing plates its two edge slots; this board
    cuts them plain.
 5. **Antenna.** The C6 module's antenna sits over the bare far end (no copper,
