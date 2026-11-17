@@ -88,8 +88,7 @@ class Grid:
                     "npth": pad.GetAttribute() == pcbnew.PAD_ATTRIB_NPTH,
                     "at": (mm(p.x), mm(p.y)),
                     # its copper for joining pieces: a round pad is round, not its box
-                    "own": ("seg", (mm(p.x), mm(p.y)), (mm(p.x), mm(p.y)), mm(min(pad.GetSizeX(), pad.GetSizeY())) / 2)
-                    if pad.GetShape() in (pcbnew.PAD_SHAPE_CIRCLE, pcbnew.PAD_SHAPE_OVAL) else None,
+                    "own": own_shape(pad, bb),
                 })
         # the copper as plain data: [net, name, layer or None for a via, a, b, half width, drill]
         self.copper = []
@@ -199,6 +198,19 @@ class Grid:
         self.hard_via[~self.inside] = BLOCKED
 
 
+def own_shape(pad, bb) -> tuple:
+    """A pad's copper for joining pieces, never more than the pad: round for a round pad; for a
+    rounded rectangle its box drawn in by 0.3 of its short side, clear of the rounded corners a track
+    can reach in the box without touching copper."""
+    p = pad.GetPosition()
+    short = mm(min(pad.GetSizeX(), pad.GetSizeY()))
+    if pad.GetShape() in (pcbnew.PAD_SHAPE_CIRCLE, pcbnew.PAD_SHAPE_OVAL):
+        return ("seg", (mm(p.x), mm(p.y)), (mm(p.x), mm(p.y)), short / 2)
+    inset = 0.3 * short if pad.GetShape() != pcbnew.PAD_SHAPE_RECTANGLE else 0.0
+    return ("box", (mm(bb.GetLeft()) + inset, mm(bb.GetTop()) + inset),
+            (mm(bb.GetRight()) - inset, mm(bb.GetBottom()) - inset), 0)
+
+
 def _edge_segments(d) -> list[tuple]:
     """Board-edge shapes as straight pieces."""
     if d.GetShape() == pcbnew.SHAPE_T_SEGMENT:
@@ -257,7 +269,7 @@ def own_cells(g: Grid, net: int) -> dict:
         if pad["net"] != net:
             continue
         for n in pad["layers"]:
-            add(n, pad["own"] or pad["shape"])
+            add(n, pad["own"])
         if len(pad["layers"]) > 2:
             links.append(g.cell(*pad["at"]))
     for onet, _name, layer, a, e, r, _drill in g.copper:
