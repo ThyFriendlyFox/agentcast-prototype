@@ -10,8 +10,8 @@ each time it is ripped, so the nets settle (negotiated congestion). Pads, the bo
 GND copper and the hand-drawn pairs (PROTECTED) are never crossed. A GND pad or pour cut off from
 the rest takes a via down to the In1.Cu / In6.Cu planes, and pour islands with no pad are removed.
 
-Rules come from the board (clearance, edge clearance, via size and drill) plus HOLE_MARGIN for the
-0.25 mm hole clearance (design.py's note). The DRC decides: run `workcenter drc .` afterwards.
+Rules come from the board: clearance, hole clearance (a hole's edge from other copper, held for vias
+and drilled pads), edge clearance, via size and drill. The DRC decides: run `workcenter drc .` after.
 
     python3 finish.py [board_dir]
 """
@@ -32,7 +32,6 @@ import pcbnew
 
 GRID = 0.025
 WIDTH = 0.12  # the board's track width (design.py track_width)
-HOLE_MARGIN = 0.02  # as design.py: the router does not model the 0.25 mm hole clearance
 SLACK = 0.03  # a cell centre stands up to GRID / sqrt(2) from the copper it stands for
 VIA_COST = 40  # in cells: a via weighs a millimetre of track
 RIP_COST, RIP_GROWTH = 20.0, 2.0  # per cell of another net's copper crossed, times (1 + growth * rips)
@@ -71,8 +70,11 @@ class Grid:
         self.layers = {name: board.GetLayerID(name) for name in ROUTING}
         self.xs = self.x0 + np.arange(self.nx) * GRID
         self.ys = self.y0 + np.arange(self.ny) * GRID
+        self.hole = mm(ds.m_HoleClearance) or 0.25  # a hole's edge from other nets' copper
         self.tgrow = self.clear + WIDTH / 2 + SLACK  # a track centre this far from other copper
-        self.vgrow = self.clear + self.via_d / 2 + HOLE_MARGIN + SLACK
+        # a new via's centre this far from other copper: its copper's clearance or its hole's, the larger
+        self.vkeep = max(self.clear + self.via_d / 2, self.via_drill / 2 + self.hole)
+        self.vgrow = self.vkeep + SLACK
         self.inside = _inside_outline(board, self.xs, self.ys)
         self.pads = []  # read once: the footprint list does not survive tracks being removed
         for fp in board.GetFootprints():
@@ -150,7 +152,12 @@ class Grid:
         if hole > 0:
             _, a, b, _ = shape
             centre = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-            self.mark(via, BLOCKED, ("seg", centre, centre, hole / 2), 0.25 + self.via_drill / 2 + SLACK)
+            edge = ("seg", centre, centre, hole / 2)
+            for name in layers:  # a track keeps the hole clearance from this hole's edge
+                if name in track:
+                    self.mark(track[name], net, edge, self.hole + WIDTH / 2 + SLACK)
+            self.mark(via, net, edge, self.hole + self.via_d / 2 + SLACK)  # and a new via's copper
+            self.mark(via, BLOCKED, edge, 0.25 + self.via_drill / 2 + SLACK)  # hole to hole, any nets
 
     def _fill(self) -> None:
         b = self.board
@@ -387,16 +394,17 @@ def rip(g: Grid, net: int, tracks: list, vias: list, whole_stubs: bool = False) 
     stub left without its via is fixed copper the router cannot join."""
     hit, keep, gone = set(), [], []
     for item in g.copper:
-        o, name, layer, p0, p1, r, _drill = item
+        o, name, layer, p0, p1, r, drill = item
         near = False
         if o != net and not protected(name):
             if layer is None:
                 c = p0
-                near = any(_seg_seg(a, b, c, c) < g.clear + WIDTH / 2 + r + HOLE_MARGIN + SLACK for _, a, b in tracks)
-                near = near or any(math.dist(v, c) < g.via_d + g.clear + HOLE_MARGIN + SLACK for v in vias)
+                keep = max(g.clear + r, drill / 2 + g.hole)  # its copper's clearance or its hole's
+                near = any(_seg_seg(a, b, c, c) < keep + WIDTH / 2 + SLACK for _, a, b in tracks)
+                near = near or any(math.dist(v, c) < g.vkeep + r + SLACK for v in vias)
             else:
                 near = any(lay == layer and _seg_seg(a, b, p0, p1) < g.clear + WIDTH / 2 + r + SLACK for lay, a, b in tracks)
-                near = near or any(_seg_dist(p0, p1, v) < g.clear + g.via_d / 2 + r + HOLE_MARGIN + SLACK for v in vias)
+                near = near or any(_seg_dist(p0, p1, v) < g.vkeep + r + SLACK for v in vias)
         if near:
             hit.add(o)
             gone.append(item)

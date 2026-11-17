@@ -386,16 +386,21 @@ def tie_pad_grounds(d: kicadgen.Design, refs: dict[str, tuple[int, int]]) -> Non
             for sx, sy in (first, (-first[0], -first[1])):
                 vx = cx if sx == 0 else round((pad.x2 if sx > 0 else pad.x1) + sx * (0.12 + r), 3)
                 vy = cy if sy == 0 else round((pad.y2 if sy > 0 else pad.y1) + sy * (0.12 + r), 3)
-                # r + HOLE_MARGIN: the hole keeps 0.25 mm to other copper (the board's hole clearance)
                 if d._via_fits(vx, vy, r + HOLE_MARGIN, drill, "GND", boxes):
                     d.track("GND", [(cx, cy), (vx, vy)], part.pcb_layer, width=0.2)
                     d.via("GND", vx, vy)
                     break
 
 
-# A via placed beside a pad grows by this much in the fit check: a little room on top of the
-# 0.25 mm hole clearance that the 0.15 mm copper clearance already gives a 0.4 / 0.2 mm via.
-HOLE_MARGIN = 0.02
+# A via placed beside a pad grows by this much in the fit check. None: kicadgen's via check holds
+# each layer's hole clearance itself (Via #45), on top of the copper clearance.
+HOLE_MARGIN = 0.0
+
+
+def via_keep(d: kicadgen.Design, size: float, drill: float) -> float:
+    """How far a via's centre keeps from other nets' copper: its copper's clearance, or its hole's
+    (0.25 mm from the hole's edge, the board's hole clearance), whichever is further."""
+    return max(d.clearance + size / 2, drill / 2 + d.board_rules()["min_hole_clearance"])
 
 
 def stitch_grounds(d: kicadgen.Design, gaps: tuple[float, ...] = (0.1, 0.25, 0.45)) -> int:
@@ -464,8 +469,8 @@ def _stub_fits(d: kicadgen.Design, net: str, a: tuple, b: tuple, w: float, layer
             q = (a[0] + (b[0] - a[0]) * i / (n - 1), a[1] + (b[1] - a[1]) * i / (n - 1))
             if _seg_point_dist(p0, p1, q) < need + ow / 2:
                 return False
-    for onet, (vx, vy), size, _drill in d.vias:
-        if onet != net and _seg_point_dist(a, b, (vx, vy)) < need + size / 2:
+    for onet, (vx, vy), size, drill in d.vias:
+        if onet != net and _seg_point_dist(a, b, (vx, vy)) < need - d.clearance + via_keep(d, size, drill):
             return False
     return True
 
@@ -659,7 +664,7 @@ def _maze_escape(d: kicadgen.Design, pad, ox: float, oy: float, boxes: list, rea
     net, layer, w = pad.net, pad.layer, 0.12
     step, n = MAZE_STEP, int(MAZE_REACH / MAZE_STEP)
     need = d.clearance + 0.01 + w / 2 + 0.018  # the grid's own error, step / sqrt(2)
-    vneed = d.clearance + d.via_size / 2 + HOLE_MARGIN + 0.018
+    vneed = via_keep(d, d.via_size, d.via_drill) + 0.018
     lo_x, hi_x, lo_y, hi_y = centre[0] - MAZE_REACH, centre[0] + MAZE_REACH, centre[1] - MAZE_REACH, centre[1] + MAZE_REACH
     track_block, via_block = set(), set()
 
@@ -694,9 +699,9 @@ def _maze_escape(d: kicadgen.Design, pad, ox: float, oy: float, boxes: list, rea
             mark(q[0], q[1], q[0], q[1], vneed + ow / 2, via_block)
             if olayer == layer:
                 mark(q[0], q[1], q[0], q[1], need + ow / 2, track_block)
-    for onet, (vx, vy), size, _drill in d.vias:
+    for onet, (vx, vy), size, drill in d.vias:
         if onet.removeprefix("/") != net.removeprefix("/") and lo_x - 1 < vx < hi_x + 1 and lo_y - 1 < vy < hi_y + 1:
-            mark(vx, vy, vx, vy, need + size / 2, track_block)
+            mark(vx, vy, vx, vy, need - d.clearance + via_keep(d, size, drill), track_block)
             mark(vx, vy, vx, vy, vneed + size / 2 + 0.05, via_block)
 
     def at(c):
@@ -914,9 +919,9 @@ def build() -> kicadgen.Design:
     d.symbol_dirs = {"Agentcast": LIB / "agentcast.kicad_sym"}
     d.footprint_dirs = {"Agentcast": LIB / "agentcast.pretty"}
     d.track_width = 0.12
-    # 0.15, not 0.12: a 0.4 / 0.2 mm via's ring (0.1) plus 0.15 keeps its hole 0.25 mm from other
-    # copper, the board's hole clearance, which the router does not model by itself.
-    d.clearance = 0.15
+    # 0.1 mm copper to copper (JLCPCB's multilayer minimum is 0.09). Around a 0.4 / 0.2 mm via the
+    # 0.25 mm hole clearance is the larger: the router keeps it since Via #45, as do via_keep's checks.
+    d.clearance = 0.1
     d.edge_clearance = 0.3
     d.via_size = 0.4
     d.via_drill = 0.2
@@ -925,7 +930,7 @@ def build() -> kicadgen.Design:
     d.net_classes = {
         "HDMI": {"width": PAIR_W, "clearance": 0.15, "via": 0.4, "via_drill": 0.2,
                  "nets": [f"HDMI_{t[4]}_{s}" for t in TMDS for s in "PN"]},
-        "Power": {"width": 0.2, "clearance": 0.15, "via": 0.4, "via_drill": 0.2,
+        "Power": {"width": 0.2, "clearance": 0.1, "via": 0.4, "via_drill": 0.2,
                   "nets": ["GND", "+5V", "+3V3", "VDD_HP", "+1V8"]},
     }  # fmt: skip
     d.power_nets = {"GND": "GND", "+5V": "+5V", "+3V3": "+3V3", "+1V8": "+1V8", "+5VP": "+5VP", "VDD_HP": "+1V1",
@@ -1190,8 +1195,9 @@ def build() -> kicadgen.Design:
     preroute(d)
     stitch_grounds(d)
     d.model("J3", "${KIPRJMOD}/models/hdmi_a_plug.wrl", offset=(0.0, -5.65, -2.9))
-    # KiCad 10 has no ESP32-C6-MINI-1 body installed here: a box the size of its fab outline (models/README.md).
-    d.model("U2", "${KIPRJMOD}/models/esp32_c6_mini_1.wrl", offset=(0.0, 2.7, 0.0), replace=True)
+    # KiCad's library names a body for the ESP32-C6-MINI-1 but has none: Espressif's own, fetched into
+    # the library (library/sources.csv); its origin is the module's corner, the footprint's its pads'.
+    d.model("U2", "${KIPRJMOD}/../library/espressif/ESP32-C6-MINI-1.step", offset=(-6.6, -5.65, 0.0), replace=True)
 
     d.text("AGENTCAST v0.5", BX + 54.0, BY + 1.6, "B.SilkS", 1.0, 0.15)
     d.text("MUTE", MUTE_AT[0], BY + H - 6.4, "F.SilkS", 0.8, 0.12)
